@@ -1,0 +1,245 @@
+/*
+ * Copyright (c) 2012 The Chromium OS Authors. All rights reserved.
+ * Use of this source code is governed by a BSD-style license that can be
+ * found in the LICENSE file.
+ */
+
+#include "qmidev.h"
+
+#include <assert.h>
+#include <errno.h>
+#include <stdint.h>
+#include <stdlib.h>
+
+#include <libqmi.h>
+
+#include "dev.h"
+#include "file.h"
+#include "mock.h"
+#include "poller.h"
+#include "qmimsg.h"
+#include "qrb.h"
+#include "util.h"
+
+struct qmidev {
+  void *priv;
+
+  struct poller *poller;
+
+  struct dev *dev;
+  struct polled *dev_polled;
+  int timerfd;
+  struct polled *timer_polled;
+
+  struct qrbset *qrbs;
+
+  int connected;
+  uint8_t control_tid;
+};
+
+static struct qmidev *qmidev_new(void)
+{
+  struct qmidev *qmidev = xmalloc(sizeof(*qmidev));
+
+  qmidev->priv = NULL;
+
+  qmidev->poller = poller_new();
+  qmidev->dev = NULL;
+  qmidev->dev_polled = NULL;
+
+  qmidev->qrbs = qrbset_alloc();
+
+  qmidev->connected = 0;
+  qmidev->control_tid = 1;
+
+  return qmidev;
+}
+
+struct qmidev *qmidev_new_file(const char *path)
+{
+  assert(path);
+
+  struct qmidev *qmidev = qmidev_new();
+
+  struct dev *dev = file_new(qmidev, path);
+  if (!dev) {
+    free(qmidev);
+    return NULL;
+  }
+  qmidev->dev = dev;
+
+  return qmidev;
+}
+
+struct qmidev *qmidev_new_mock(void)
+{
+  struct qmidev *qmidev = qmidev_new();
+
+  struct dev *dev = mock_new();
+  qmidev->dev = dev;
+
+  return qmidev;
+}
+
+void *qmidev_priv(struct qmidev *qmidev)
+{
+  assert(qmidev);
+  return qmidev->priv;
+}
+
+void qmidev_set_priv(struct qmidev *qmidev, void *priv)
+{
+  assert(qmidev);
+  qmidev->priv = priv;
+}
+
+int qmidev_fd(struct qmidev *qmidev)
+{
+  assert(qmidev);
+  return poller_fd(qmidev->poller);
+}
+
+int qmidev_process(struct qmidev *qmidev)
+{
+  assert(qmidev);
+  return poller_poll(qmidev->poller);
+}
+
+int qmidev_connect(struct qmidev *qmidev, qmidev_response_fn cb, void *ctx)
+{
+  assert(qmidev);
+  assert(cb);
+  assert(!qmidev->connected);
+
+  int result = dev_open(qmidev->dev);
+  if (result < 0)
+    return result;
+
+  qmidev->connected = 1;
+
+  /* TODO: initialize stuff :P */
+
+  /* TODO: Call in separate call stack (http://crosbug.com/27559) */
+  cb(qmidev, ctx, 0);
+
+  return 0;
+}
+
+int qmidev_disconnect(struct qmidev *qmidev, qmidev_response_fn cb, void *ctx)
+{
+  assert(qmidev);
+  assert(cb);
+  assert(qmidev->connected);
+
+  /* TODO: tear down stuff :P */
+
+  int result = dev_close(qmidev->dev);
+  if (result < 0)
+    return result;
+
+  qmidev->connected = 0;
+
+  /* TODO: Call in separate call stack (http://crosbug.com/27559) */
+  cb(qmidev, ctx, 0);
+
+  return 0;
+}
+
+static int dev_read_fn(void *ctx, void *buf, size_t len)
+{
+  assert(ctx);
+  struct qmidev *qmidev = ctx;
+  assert(qmidev->dev);
+
+  return dev_read(qmidev->dev, buf, len);
+}
+
+static void dev_read_cb(struct polled *polled)
+{
+  assert(polled);
+  struct qmidev *qmidev = polled_priv(polled);
+  assert(qmidev);
+
+  struct qmimsg *msg;
+  int result = qmimsg_read(&dev_read_fn, qmidev, &msg);
+  /* TODO: Do something. */
+  if (result)
+    return;
+  qrbset_complete(qmidev->qrbs, msg);
+  qmimsg_free(msg);
+}
+
+static void dev_close_cb(struct polled *polled)
+{
+  assert(polled);
+  struct qmidev *qmidev = polled_priv(polled);
+  assert(qmidev);
+
+  qmidev_clear_dev_fd(qmidev);
+}
+
+int qmidev_set_dev_fd(struct qmidev *qmidev, int fd)
+{
+  assert(qmidev);
+  assert(fd >= 0);
+  assert(!qmidev->dev_polled);
+
+  qmidev->dev_polled = poller_add(qmidev->poller, fd);
+  if (!qmidev->dev_polled)
+    return ENOMEM;
+  polled_set_priv(qmidev->dev_polled, qmidev);
+  polled_set_read(qmidev->dev_polled, &dev_read_cb);
+  polled_set_close(qmidev->dev_polled, &dev_close_cb);
+  polled_update(qmidev->dev_polled);
+
+  return 0;
+}
+
+int qmidev_clear_dev_fd(struct qmidev *qmidev)
+{
+  assert(qmidev);
+  assert(qmidev->dev_polled);
+
+  /* Make sure we don't get called again. */
+  polled_set_close(qmidev->dev_polled, NULL);
+  polled_update(qmidev->dev_polled);
+
+  /* will be freed by the poller when the fd closes. */
+  qmidev->dev_polled = NULL;
+
+  return 0;
+}
+
+static int dev_write_fn(void *ctx, const void *buf, size_t len)
+{
+  assert(ctx);
+  struct qmidev *qmidev = ctx;
+  assert(qmidev->dev);
+
+  return dev_write(qmidev->dev, buf, len);
+}
+
+int qmidev_send(struct qmidev *qmidev, struct qmimsg *msg)
+{
+  assert(qmidev);
+  assert(qmidev->connected);
+
+  return qmimsg_write(msg, &dev_write_fn, qmidev);
+}
+
+struct polled *qmidev_poll(struct qmidev *qmidev, int fd)
+{
+  assert(qmidev);
+
+  return poller_add(qmidev->poller, fd);
+}
+
+int qmidev_listen(struct qmidev *qmidev, struct qrb *qrb)
+{
+  assert(qmidev);
+  assert(qrb);
+
+  qrbset_add(qmidev->qrbs, qrb);
+
+  return 0;
+}

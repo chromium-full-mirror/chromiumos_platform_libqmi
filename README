@@ -1,0 +1,17 @@
+libqmi is a library for talking to devices that speak the QMI protocol, like
+Qualcomm Gobi cellular modems.
+
+References:
+
+In the code, there are references to some of Qualcomm's open-source code that
+documents portions of the QMI protocol.  Here is a guide to where to find
+that code:
+
+[Gobi]: https://www.codeaurora.org/patches/quic/gobi/Gobi/Gobi_2012-01-12-1106.tar.gz
+[Gobi3000Net]: https://www.codeaurora.org/patches/quic/gobi/Gobi3000/GobiNet_2011-07-29-1026.tar.gz
+[Gobi3000API]: https://www.codeaurora.org/patches/quic/gobi/Gobi3000/GobiAPI_2011-07-29-1026.tar.gz
+
+In addition, there are some references to Chromium OS's old rewrite of the
+GobiNet kernel driver:
+
+[cros-kernel]: http://git.chromium.org/gitweb/?p=chromiumos/third_party/kernel.git
