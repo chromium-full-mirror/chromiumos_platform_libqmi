@@ -68,18 +68,13 @@ static void get_cid_cb(struct qrb *qrb, struct qmimsg *msg)
   assert(ctx);
   struct qmi_cid id;
   struct { uint16_t status; uint16_t error; } result;
-  uint16_t length;
 
-  length = sizeof(result);
-  if (qmimsg_tlv_get(msg, QMI_TLV_RESULT, &length, &result) ||
-      length != sizeof(result) ||
+  if (qmimsg_tlv_get(msg, QMI_TLV_RESULT, sizeof(result), &result) ||
       result.status != 0) {
     goto fail;
   }
 
-  length = sizeof(id);
-  if (qmimsg_tlv_get(msg, QMI_TLV_ID, &length, &id) ||
-      length != sizeof(id) ||
+  if (qmimsg_tlv_get(msg, QMI_TLV_ID, sizeof(id), &id) ||
       id.service != ctx->service) {
     goto fail;
   }
@@ -133,18 +128,13 @@ static void release_cid_cb(struct qrb *qrb, struct qmimsg *msg)
   assert(ctx);
   struct qmi_cid id;
   struct { uint16_t status; uint16_t error; } result;
-  uint16_t length;
 
-  length = sizeof(result);
-  if (qmimsg_tlv_get(msg, QMI_TLV_RESULT, &length, &result) ||
-      length != sizeof(result) ||
+  if (qmimsg_tlv_get(msg, QMI_TLV_RESULT, sizeof(result), &result) ||
       result.status != 0) {
     goto fail;
   }
 
-  length = sizeof(id);
-  if (qmimsg_tlv_get(msg, QMI_TLV_ID, &length, &id) ||
-      length != sizeof(id) ||
+  if (qmimsg_tlv_get(msg, QMI_TLV_ID, sizeof(id), &id) ||
       id.service != ctx->id.service ||
       id.client != ctx->id.client) {
     goto fail;

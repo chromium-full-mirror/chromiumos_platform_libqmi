@@ -68,15 +68,25 @@ void qmimsg_get_header(struct qmimsg *message,
 
 /**
  * Finds a TLV element with the given type in the payload of the given QMI
- * message, copies the length to length, and copies the value into value.
+ * message, checks that the length is length, and copies the value into value.
  *
- * On success, returns zero; on failure, returns errno.
- *
- * If the initial value of *length is not big enough to hold the TLV,
- * returns ENOSPC.
+ * Returns 0 if the element was found and was the correct length;
+ * EINVAL if the element was found but the length was incorrect;
+ * ENOENT if the element was not found.
  */
 int qmimsg_tlv_get(struct qmimsg *message,
-                   uint8_t type, uint16_t *length, void *value);
+                   uint8_t type, uint16_t length, void *value);
+
+/**
+ * Finds a TLV element with the given type in the payload of the given QMI
+ * message and copies the value into value.
+ *
+ * Returns 0 if the element was found and fit into the buffer;
+ * ENOSPC if the element was found but the value was too big;
+ * ENOENT if the element was not found.
+ */
+int qmimsg_tlv_get_varlen(struct qmimsg *message,
+                          uint8_t type, uint16_t *length, void *value);
 
 /**
  * Appends a TLV element with the given type, length, and value to the payload
@@ -84,8 +94,8 @@ int qmimsg_tlv_get(struct qmimsg *message,
  *
  * On success, returns zero; on failure, returns errno.
  *
- * If the added TLV would overflow one of the length fields in the QMI
- * message, returns ENOSPC.
+ * Returns 0 if the element was added successfully;
+ * ENOSPC if adding the element would overflow one of the length fields.
  */
 int qmimsg_tlv_add(struct qmimsg *message,
                    uint8_t type, uint16_t length, const void *buf);

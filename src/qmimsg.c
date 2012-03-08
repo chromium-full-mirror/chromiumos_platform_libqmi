@@ -290,9 +290,8 @@ int qmimsg_read(qmimsg_read_fn read_fn, void *context,
   result = read_fn(context, &framed_qmux, sizeof(framed_qmux));
   if (result)
     return result;
-  /* TODO: Return a better error. */
   if (framed_qmux.marker != QMUX_MARKER)
-    return -1;
+    return EIO;
 
   m = xmalloc(sizeof(*m));
   m->len = le16toh(framed_qmux.qmux.length) + 1;
@@ -307,7 +306,7 @@ int qmimsg_read(qmimsg_read_fn read_fn, void *context,
 
   if (!qmi_check(m)) {
     qmimsg_free(m);
-    return -1;
+    return EIO;
   }
 
   *message_out = m;
@@ -377,8 +376,11 @@ void qmimsg_free(struct qmimsg *message)
   xfree(message);
 }
 
-int qmimsg_tlv_get(struct qmimsg *message,
-                   uint8_t type, uint16_t *length, void *value)
+static int qmimsg_tlv_get_internal(struct qmimsg *message,
+                                   uint8_t type,
+                                   uint16_t *length,
+                                   void *value,
+                                   int length_exact)
 {
   assert(message);
   assert(message->buf);
@@ -386,8 +388,9 @@ int qmimsg_tlv_get(struct qmimsg *message,
   struct tlv *tlv;
   for (tlv = qmi_tlv_first(message); tlv; tlv = qmi_tlv_next(message, tlv)) {
     if (tlv->type == type) {
-      if (tlv->length > *length) {
-        /* TODO: Better error? */
+      if (length_exact && (tlv->length != *length)) {
+        return EINVAL;
+      } else if (tlv->length > *length) {
         return ENOSPC;
       }
       *length = tlv->length;
@@ -396,9 +399,21 @@ int qmimsg_tlv_get(struct qmimsg *message,
     }
   }
 
-  /* TODO: Better error? */
   return ENOENT;
 }
+
+int qmimsg_tlv_get(struct qmimsg *message,
+                   uint8_t type, uint16_t length, void *value)
+{
+  return qmimsg_tlv_get_internal(message, type, &length, value, 1);
+}
+
+int qmimsg_tlv_get_varlen(struct qmimsg *message,
+                          uint8_t type, uint16_t *length, void *value)
+{
+  return qmimsg_tlv_get_internal(message, type, length, value, 0);
+}
+
 
 int qmimsg_tlv_add(struct qmimsg *m,
                    uint8_t type, uint16_t length, const void *value)
