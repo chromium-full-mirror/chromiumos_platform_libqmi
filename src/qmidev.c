@@ -15,6 +15,7 @@
 
 #include "dev.h"
 #include "file.h"
+#include "list.h"
 #include "mock.h"
 #include "poller.h"
 #include "qmimsg.h"
@@ -32,10 +33,13 @@ struct qmidev {
   struct polled *timer_polled;
 
   struct qrbset *qrbs;
+  struct list callbacks;
 
   int connected;
   uint8_t control_tid;
 };
+
+static void qmidev_call_callbacks(struct qmidev *qmidev);
 
 static struct qmidev *qmidev_new(void)
 {
@@ -48,6 +52,7 @@ static struct qmidev *qmidev_new(void)
   qmidev->dev_polled = NULL;
 
   qmidev->qrbs = qrbset_alloc();
+  list_init(&qmidev->callbacks);
 
   qmidev->connected = 0;
   qmidev->control_tid = 1;
@@ -102,6 +107,7 @@ int qmidev_fd(struct qmidev *qmidev)
 int qmidev_process(struct qmidev *qmidev)
 {
   assert(qmidev);
+  qmidev_call_callbacks(qmidev);
   return poller_poll(qmidev->poller);
 }
 
@@ -242,4 +248,38 @@ int qmidev_listen(struct qmidev *qmidev, struct qrb *qrb)
   qrbset_add(qmidev->qrbs, qrb);
 
   return 0;
+}
+
+struct callback {
+  callback_fn func;
+  void *context;
+  struct list_node node;
+};
+
+void qmidev_call(struct qmidev *qmidev, callback_fn func, void *context)
+{
+  assert(qmidev);
+  assert(func);
+
+  struct callback *callback = xmalloc(sizeof(*callback));
+  callback->func = func;
+  callback->context = context;
+  list_add(&qmidev->callbacks, &callback->node, callback);
+}
+
+static int call_callback(void *context, struct list_node *node, void *item)
+{
+  struct qmidev *qmidev = context;
+  struct callback *callback = item;
+
+  callback->func(qmidev, callback->context);
+  list_remove(&qmidev->callbacks, node);
+  xfree(callback);
+
+  return 0;
+}
+
+void qmidev_call_callbacks(struct qmidev *qmidev)
+{
+  list_apply(&qmidev->callbacks, call_callback, qmidev);
 }
