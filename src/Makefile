@@ -6,11 +6,18 @@ CFLAGS += -Wall -Wextra -Werror -fPIC -I ../include
 
 all: libqmi.so
 
-LIBQMI_SRCS = dev.c file.c mock.c poller.c qmictl.c qmidev.c qmimsg.c qrb.c \
-	util.c
+LIBQMI_SRCS = dev.c file.c list.c mock.c poller.c qmictl.c qmidev.c qmimsg.c \
+	qrb.c util.c
+
 LIBQMI_OBJS = $(LIBQMI_SRCS:.c=.o)
 libqmi.so: $(LIBQMI_OBJS)
 	$(CC) $(LDFLAGS) -Wl,-soname,libqmi.so -shared -o $@ $^
 
+test: list_unittest
+	./list_unittest
+
+list_unittest: $(LIBQMI_OBJS) list_unittest.o
+	$(CC) $(LDFLAGS) -o $@ $^
+
 clean:
-	rm -f *.o libqmi.so
+	rm -f *.o libqmi.so list_unittest
