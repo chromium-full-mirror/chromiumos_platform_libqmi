@@ -36,8 +36,13 @@ static int file_open(struct dev *dev)
   if (fd < 0)
     return errno;
 
+  int result = qmidev_set_dev_fd(priv->qmidev, fd);
+  if (result) {
+    close(fd);
+    return result;
+  }
+
   priv->fd = fd;
-  qmidev_set_dev_fd(priv->qmidev, fd);
 
   return 0;
 }
@@ -85,6 +90,7 @@ static int file_close(struct dev *dev)
     return result;
 
   priv->fd = FD_CLOSED;
+
   qmidev_clear_dev_fd(priv->qmidev);
 
   return 0;
