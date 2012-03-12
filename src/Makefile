@@ -7,7 +7,7 @@ CFLAGS += -Wall -Wextra -Werror -fPIC -I ../include
 all: libqmi.so
 
 LIBQMI_SRCS = dev.c file.c list.c mock.c poller.c qmictl.c qmidev.c qmimsg.c \
-	qrb.c util.c
+	util.c
 TESTS = list_unittest qmidev_unittest
 
 LIBQMI_OBJS = $(LIBQMI_SRCS:.c=.o)

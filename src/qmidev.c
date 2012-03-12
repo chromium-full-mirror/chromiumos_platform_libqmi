@@ -10,6 +10,7 @@
 #include <errno.h>
 #include <stdint.h>
 #include <stdlib.h>
+#include <string.h>
 
 #include <libqmi.h>
 
@@ -19,7 +20,6 @@
 #include "mock.h"
 #include "poller.h"
 #include "qmimsg.h"
-#include "qrb.h"
 #include "util.h"
 
 struct qmidev {
@@ -32,14 +32,30 @@ struct qmidev {
   int timerfd;
   struct polled *timer_polled;
 
-  struct qrbset *qrbs;
   struct list callbacks;
+  struct list listeners;
 
   int connected;
   uint8_t control_tid;
 };
 
-static void qmidev_call_callbacks(struct qmidev *qmidev);
+struct listener {
+  struct listen_criteria criteria;
+  qmidev_listen_callback_fn callback;
+  void *context;
+
+  struct list_node node;
+};
+
+struct callback {
+  callback_fn func;
+  void *context;
+
+  struct list_node node;
+};
+
+static void call_listeners(struct qmidev *qmidev, struct qmimsg *message);
+static void call_callbacks(struct qmidev *qmidev);
 
 static struct qmidev *qmidev_new(void)
 {
@@ -51,8 +67,8 @@ static struct qmidev *qmidev_new(void)
   qmidev->dev = NULL;
   qmidev->dev_polled = NULL;
 
-  qmidev->qrbs = qrbset_alloc();
   list_init(&qmidev->callbacks);
+  list_init(&qmidev->listeners);
 
   qmidev->connected = 0;
   qmidev->control_tid = 1;
@@ -107,7 +123,8 @@ int qmidev_fd(struct qmidev *qmidev)
 int qmidev_process(struct qmidev *qmidev)
 {
   assert(qmidev);
-  qmidev_call_callbacks(qmidev);
+
+  call_callbacks(qmidev);
   return poller_poll(qmidev->poller);
 }
 
@@ -200,7 +217,7 @@ static void dev_read_cb(struct polled *polled)
   /* TODO: Do something. */
   if (result)
     return;
-  qrbset_complete(qmidev->qrbs, msg);
+  call_listeners(qmidev, msg);
   qmimsg_free(msg);
 }
 
@@ -269,21 +286,7 @@ struct polled *qmidev_poll(struct qmidev *qmidev, int fd)
   return poller_add(qmidev->poller, fd);
 }
 
-int qmidev_listen(struct qmidev *qmidev, struct qrb *qrb)
-{
-  assert(qmidev);
-  assert(qrb);
 
-  qrbset_add(qmidev->qrbs, qrb);
-
-  return 0;
-}
-
-struct callback {
-  callback_fn func;
-  void *context;
-  struct list_node node;
-};
 
 void qmidev_call_later(struct qmidev *qmidev, callback_fn func, void *context)
 {
@@ -308,7 +311,83 @@ static int call_callback(void *context, struct list_node *node, void *item)
   return 0;
 }
 
-void qmidev_call_callbacks(struct qmidev *qmidev)
+static void call_callbacks(struct qmidev *qmidev)
 {
   list_apply(&qmidev->callbacks, call_callback, qmidev);
+}
+
+
+
+struct listener *qmidev_listen(struct qmidev *qmidev,
+                               struct listen_criteria *criteria,
+                               qmidev_listen_callback_fn callback,
+                               void *context)
+{
+  assert(qmidev);
+  assert(criteria);
+  assert(callback);
+
+  struct listener *listener = xmalloc(sizeof(*listener));
+
+  listener->criteria = *criteria;
+  listener->callback = callback;
+  listener->context = context;
+  list_add(&qmidev->listeners, &listener->node, listener);
+
+  return listener;
+}
+
+void qmidev_cancel_listen(struct qmidev *qmidev, struct listener *listener)
+{
+  assert(qmidev);
+  assert(listener);
+
+  list_remove(&qmidev->listeners, &listener->node);
+}
+
+struct call_listener_context {
+  struct qmidev *qmidev;
+  struct qmimsg *message;
+  uint8_t service;
+  uint8_t client;
+  uint16_t transaction;
+};
+
+static int call_listener(void *data, struct list_node *node, void *item)
+{
+  struct call_listener_context *context = data;
+  struct listener *listener = item;
+
+  if (listener->criteria.service != context->service)
+    return 0;
+
+  if ((listener->criteria.client != QMI_CLIENT_BROADCAST) &&
+      (listener->criteria.client != context->client))
+    return 0;
+
+  if ((listener->criteria.transaction != 0) &&
+      (listener->criteria.transaction != context->transaction))
+    return 0;
+
+  int result = listener->callback(context->qmidev,
+                                  listener->context,
+                                  context->message);
+  if (result) {
+    qmidev_cancel_listen(context->qmidev, listener);
+  }
+
+  /* unused */
+  node = node;
+
+  return 0;
+}
+
+static void call_listeners(struct qmidev *qmidev, struct qmimsg *message)
+{
+  struct call_listener_context context;
+  context.qmidev = qmidev;
+  context.message = message;
+  qmimsg_get_header(message,
+                    &context.service, &context.client, &context.transaction);
+  list_apply(&qmidev->listeners, call_listener, &context);
 }

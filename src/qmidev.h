@@ -14,11 +14,19 @@
 #define LIBQMI_QMIDEV_H
 
 #include <stddef.h>
+#include <stdint.h>
 
 struct qmidev;
 struct qmimsg;
-struct qrb;
 struct callback;
+
+struct listener;
+
+struct listen_criteria {
+  uint8_t service;
+  uint8_t client;
+  uint16_t transaction;
+};
 
 /* TODO: These should be replaced by qmidev_poll. */
 
@@ -48,10 +56,45 @@ struct polled *qmidev_poll(struct qmidev *qmidev, int fd);
 int qmidev_send(struct qmidev *qmidev, struct qmimsg *msg);
 
 /**
- * Listens for incoming messages matching a qrb.
- * Returns zero on success, errno on failure.
+ * Callback type for qmidev_listen.
+ *
+ * Will be called when a message matching the listen criteria is received.
+ *
+ * @qmidev: the QMI device on which a message was received
+ * @context: the context passed to qmidev_listen
+ * @message: the message received
+ *
+ * The callback should return zero to continue listening for such messages,
+ * or non-zero to remove the listener.
  */
-int qmidev_listen(struct qmidev *qmidev, struct qrb *qrb);
+typedef int (*qmidev_listen_callback_fn)(struct qmidev *qmidev,
+                                         void *context,
+                                         struct qmimsg *message);
+
+/**
+ * Starts listening for QMI messages matching certain criteria.
+ *
+ * @qmidev: the QMI device
+ * @criteria: the listen criteria (see struct listen_criteria)
+ * @callback: the callback to call when a matching message is received
+ * @context: the context with which to call the callback
+ *
+ * Returns a pointer to a struct listener that can be passed to
+ * qmidev_cancel_listen to stop listening.
+ */
+
+struct listener *qmidev_listen(struct qmidev *qmidev,
+                               struct listen_criteria *criteria,
+                               qmidev_listen_callback_fn callback,
+                               void *context);
+
+/**
+ * Stops listening for QMI messages matching certain criteria.
+ *
+ * @qmidev: the QMI device
+ * @listener: the listener returned by qmidev_listen
+ */
+void qmidev_cancel_listen(struct qmidev *qmidev, struct listener *listener);
 
 typedef void (*callback_fn)(struct qmidev *qmidev, void *context);
 
@@ -60,6 +103,8 @@ typedef void (*callback_fn)(struct qmidev *qmidev, void *context);
  */
 void qmidev_call_later(struct qmidev *qmidev, callback_fn func,
                        void *context);
+
+/* Mock qmidev functions: */
 
 /* Create a new mock QMI device (backed by pipes instead of a real file.) */
 struct qmidev *qmidev_new_mock(void);

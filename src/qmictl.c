@@ -20,7 +20,6 @@
 
 #include "qmidev.h"
 #include "qmimsg.h"
-#include "qrb.h"
 #include "util.h"
 
 /* This will move to qmi.h once that exists and we add multiple services */
@@ -36,7 +35,7 @@ enum {
 #define QMI_TLV_ID 0x01
 #define QMI_TLV_RESULT 0x02
 
-static struct qmimsg *qmimsg_ctl_new(uint16_t transaction, uint16_t message)
+static struct qmimsg *ctl_msg_new(uint16_t transaction, uint16_t message)
 {
   struct qmimsg *msg;
 
@@ -48,132 +47,139 @@ static struct qmimsg *qmimsg_ctl_new(uint16_t transaction, uint16_t message)
   return msg;
 }
 
+static void ctl_criteria(uint16_t transaction,
+                         struct listen_criteria *criteria)
+{
+  criteria->service = QMI_SERVICE_CTL;
+  criteria->client = QMI_CTL_CLIENT;
+  criteria->transaction = transaction;
+}
+
 struct qmi_cid {
   uint8_t service;
   uint8_t client;
 };
 
-struct get_cid_ctx {
-  qmidev *qmidev;
-
-  qmictl_get_cid_response_fn cb;
+struct get_cid_context {
+  qmictl_get_cid_response_fn callback;
   void *context;
-
   uint8_t service;
 };
 
-static void get_cid_cb(struct qrb *qrb, struct qmimsg *msg)
+static int got_cid(struct qmidev *qmidev, void *data,
+                   struct qmimsg *message)
 {
-  struct get_cid_ctx *ctx = qrb_priv(qrb);
-  assert(ctx);
+  assert(qmidev);
+  assert(data);
+  assert(message);
+
+  struct get_cid_context *context = data;
   struct qmi_cid id;
   struct { uint16_t status; uint16_t error; } result;
 
-  if (qmimsg_tlv_get(msg, QMI_TLV_RESULT, sizeof(result), &result) ||
+  if (qmimsg_tlv_get(message, QMI_TLV_RESULT, sizeof(result), &result) ||
       result.status != 0) {
     goto fail;
   }
 
-  if (qmimsg_tlv_get(msg, QMI_TLV_ID, sizeof(id), &id) ||
-      id.service != ctx->service) {
+  if (qmimsg_tlv_get(message, QMI_TLV_ID, sizeof(id), &id) ||
+      id.service != context->service) {
     goto fail;
   }
 
-  ctx->cb(ctx->qmidev, ctx->context, 0, id.client);
+  context->callback(qmidev, context->context, 0, id.client);
   goto out;
 
 fail:
-  ctx->cb(ctx->qmidev, ctx->context, -1, 0);
+  context->callback(qmidev, context->context, -1, 0);
 
 out:
-  xfree(ctx);
-  qrb_set_priv(qrb, NULL);
+  xfree(context);
+
+  return 1;
 }
 
 int qmictl_get_cid(struct qmidev *qmidev, uint8_t service,
-                   qmictl_get_cid_response_fn callback, void *context)
+                   qmictl_get_cid_response_fn caller_callback,
+                   void *caller_context)
 {
-  struct qmimsg *msg;
-  struct qrb *qrb;
-  struct get_cid_ctx *ctx = xmalloc(sizeof(*ctx));
+  struct get_cid_context *context = xmalloc(sizeof(*context));
+  context->callback = caller_callback;
+  context->context  = caller_context;
+  context->service  = service;
+
   uint16_t tid = 0x0001; /* TODO: ACtually allocate a tid. */
 
-  msg = qmimsg_ctl_new(tid, QMICTL_MSG_GET_CID);
-  qmimsg_tlv_add(msg, QMI_TLV_ID, sizeof(service), &service);
-  qmidev_send(qmidev, msg);
+  struct qmimsg *message;
+  message = ctl_msg_new(tid, QMICTL_MSG_GET_CID);
+  qmimsg_tlv_add(message, QMI_TLV_ID, sizeof(service), &service);
+  qmidev_send(qmidev, message);
 
-  ctx->qmidev = qmidev;
-  ctx->cb = callback;
-  ctx->context = context;
-  ctx->service = service;
-
-  qrb = qrb_alloc(QMI_SERVICE_CTL, QMI_CTL_CLIENT, tid, 0, get_cid_cb, ctx);
-  qmidev_listen(qmidev, qrb);
+  struct listen_criteria criteria;
+  ctl_criteria(tid, &criteria);
+  qmidev_listen(qmidev, &criteria, &got_cid, context);
 
   return 0;
 }
 
-struct release_cid_ctx {
-  qmidev *qmidev;
-
-  qmidev_response_fn cb;
+struct release_cid_context {
+  qmidev_response_fn callback;
   void *context;
-
   struct qmi_cid id;
 };
 
-static void release_cid_cb(struct qrb *qrb, struct qmimsg *msg)
+static int released_cid(struct qmidev *qmidev, void *data,
+                        struct qmimsg *message)
 {
-  struct release_cid_ctx *ctx = qrb_priv(qrb);
-  assert(ctx);
+  assert(qmidev);
+  assert(data);
+  assert(message);
+
+  struct release_cid_context *context = data;
   struct qmi_cid id;
   struct { uint16_t status; uint16_t error; } result;
 
-  if (qmimsg_tlv_get(msg, QMI_TLV_RESULT, sizeof(result), &result) ||
+  if (qmimsg_tlv_get(message, QMI_TLV_RESULT, sizeof(result), &result) ||
       result.status != 0) {
     goto fail;
   }
 
-  if (qmimsg_tlv_get(msg, QMI_TLV_ID, sizeof(id), &id) ||
-      id.service != ctx->id.service ||
-      id.client != ctx->id.client) {
+  if (qmimsg_tlv_get(message, QMI_TLV_ID, sizeof(id), &id) ||
+      id.service != context->id.service ||
+      id.client != context->id.client) {
     goto fail;
   }
 
-  ctx->cb(ctx->qmidev, ctx->context, 0);
-goto out;
+  context->callback(qmidev, context->context, 0);
+  goto out;
 
 fail:
-  ctx->cb(ctx->qmidev, ctx->context, -1);
+  context->callback(qmidev, context->context, -1);
 
 out:
-  xfree(ctx);
-  qrb_set_priv(qrb, NULL);
+  xfree(context);
+
+  return 1;
 }
 
 int qmictl_release_cid(struct qmidev *qmidev, uint8_t service, uint8_t client,
-                       qmidev_response_fn callback, void *context)
+                       qmidev_response_fn caller_callback,
+                       void *caller_context)
 {
-  struct qmimsg *msg;
-  struct qrb *qrb;
-  struct release_cid_ctx *ctx = xmalloc(sizeof(*ctx));
-  struct qmi_cid id;
+  struct release_cid_context *context = xmalloc(sizeof(*context));
+  context->callback   = caller_callback;
+  context->context    = caller_context;
+  context->id.service = service;
+  context->id.client  = client;
+
   uint16_t tid = 0x0001; /* TODO: Allocate a transaction ID. */
+  struct qmimsg *message = ctl_msg_new(tid, QMICTL_MSG_RELEASE_CID);
+  qmimsg_tlv_add(message, QMI_TLV_ID, sizeof(context->id), &context->id);
+  qmidev_send(qmidev, message);
 
-  msg = qmimsg_ctl_new(tid, QMICTL_MSG_RELEASE_CID);
-  id.service = service;
-  id.client = client;
-  qmimsg_tlv_add(msg, QMI_TLV_ID, sizeof(id), &id);
-  qmidev_send(qmidev, msg);
-
-  ctx->qmidev = qmidev;
-  ctx->cb = callback;
-  ctx->context = context;
-  ctx->id.service = service;
-  ctx->id.client = client;
-
-  qrb = qrb_alloc(QMI_SERVICE_CTL, QMI_CTL_CLIENT, tid, 0, release_cid_cb, ctx);
-  qmidev_listen(qmidev, qrb);
+  struct listen_criteria criteria;
+  ctl_criteria(tid, &criteria);
+  qmidev_listen(qmidev, &criteria, &released_cid, context);
 
   return 0;
 }
