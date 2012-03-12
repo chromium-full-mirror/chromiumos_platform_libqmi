@@ -125,7 +125,7 @@ int poller_poll(struct poller *poller)
 
   n = epoll_wait(poller->epoll_fd,
                  events, sizeof(events) / sizeof(events[0]),
-                 -1);
+                 0);
   if (n < 0)
     return n;
   for (i = 0; i < n; i++) {
