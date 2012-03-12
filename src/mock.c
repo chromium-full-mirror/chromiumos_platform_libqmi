@@ -31,6 +31,8 @@ static int mock_open(struct dev *dev)
   struct mock_priv *priv = dev_priv(dev);
   assert(priv);
 
+  priv->is_open = 1;
+
   return 0;
 }
 
