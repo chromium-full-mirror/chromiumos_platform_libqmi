@@ -21,7 +21,7 @@ static void hello(struct qmidev *qmidev, void *context)
 int main(void)
 {
   struct qmidev *qmidev = qmidev_new_file("/dev/null");
-  qmidev_call(qmidev, hello, NULL);
+  qmidev_call_later(qmidev, hello, NULL);
   alarm(1);
   qmidev_process(qmidev);
   return 0;

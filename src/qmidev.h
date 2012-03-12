@@ -58,7 +58,8 @@ typedef void (*callback_fn)(struct qmidev *qmidev, void *context);
 /**
  * Calls a callback from qmidev_process instead of the current call stack.
  */
-void qmidev_call(struct qmidev *qmidev, callback_fn func, void *context);
+void qmidev_call_later(struct qmidev *qmidev, callback_fn func,
+                       void *context);
 
 /* Create a new mock QMI device (backed by pipes instead of a real file.) */
 struct qmidev *qmidev_new_mock(void);

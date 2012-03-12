@@ -111,6 +111,21 @@ int qmidev_process(struct qmidev *qmidev)
   return poller_poll(qmidev->poller);
 }
 
+struct connect_context {
+  qmidev_response_fn callback;
+  void *context;
+  int status;
+};
+
+/* TODO: This can be made generic, for any qmidev_response_fn. */
+static void connect_done(struct qmidev *qmidev, void *data)
+{
+  struct connect_context *context = data;
+
+  context->callback(qmidev, context->context, context->status);
+  xfree(context);
+}
+
 int qmidev_connect(struct qmidev *qmidev, qmidev_response_fn cb, void *ctx)
 {
   assert(qmidev);
@@ -123,12 +138,23 @@ int qmidev_connect(struct qmidev *qmidev, qmidev_response_fn cb, void *ctx)
 
   qmidev->connected = 1;
 
-  /* TODO: initialize stuff :P */
+  /* TODO: Make sure we can talk to card, allocate clients, etc. */
 
-  /* TODO: Call in separate call stack (http://crosbug.com/27559) */
-  cb(qmidev, ctx, 0);
+  struct connect_context *context = xmalloc(sizeof(*context));
+  context->callback = cb;
+  context->context = ctx;
+  context->status = 0;
+  qmidev_call_later(qmidev, &connect_done, context);
 
   return 0;
+}
+
+static void disconnect_done(struct qmidev *qmidev, void *data)
+{
+  struct connect_context *context = data;
+
+  context->callback(qmidev, context->context, context->status);
+  xfree(context);
 }
 
 int qmidev_disconnect(struct qmidev *qmidev, qmidev_response_fn cb, void *ctx)
@@ -137,7 +163,7 @@ int qmidev_disconnect(struct qmidev *qmidev, qmidev_response_fn cb, void *ctx)
   assert(cb);
   assert(qmidev->connected);
 
-  /* TODO: tear down stuff :P */
+  /* TODO: Release clients, etc. */
 
   int result = dev_close(qmidev->dev);
   if (result < 0)
@@ -145,8 +171,11 @@ int qmidev_disconnect(struct qmidev *qmidev, qmidev_response_fn cb, void *ctx)
 
   qmidev->connected = 0;
 
-  /* TODO: Call in separate call stack (http://crosbug.com/27559) */
-  cb(qmidev, ctx, 0);
+  struct connect_context *context = xmalloc(sizeof(*context));
+  context->callback = cb;
+  context->context = ctx;
+  context->status = 0;
+  qmidev_call_later(qmidev, &disconnect_done, context);
 
   return 0;
 }
@@ -256,7 +285,7 @@ struct callback {
   struct list_node node;
 };
 
-void qmidev_call(struct qmidev *qmidev, callback_fn func, void *context)
+void qmidev_call_later(struct qmidev *qmidev, callback_fn func, void *context)
 {
   assert(qmidev);
   assert(func);
