@@ -4,25 +4,62 @@
  * found in the LICENSE file.
  */
 
+#include <assert.h>
 #include <stdlib.h>
 #include <unistd.h>
 
 #include <libqmi.h>
 #include "qmidev.h"
 
-static void hello(struct qmidev *qmidev, void *context)
-{
-  qmidev = qmidev;
-  context = context;
+static struct qmidev *mock_qmidev;
+static int in_process;
+static int connected_called;
+static int disconnected_called;
 
-  exit(0);
+void connected(struct qmidev *qmidev, void *context, int status)
+{
+  assert(qmidev == mock_qmidev);
+  assert(context == NULL);
+  assert(status == 0);
+  assert(in_process);
+
+  connected_called = 1;
+}
+
+void disconnected(struct qmidev *qmidev, void *context, int status)
+{
+  assert(qmidev == mock_qmidev);
+  assert(context == NULL);
+  assert(status == 0);
+  assert(in_process);
+
+  disconnected_called = 1;
+}
+
+void process(void)
+{
+  in_process = 1;
+  qmidev_process(mock_qmidev);
+  in_process = 0;
 }
 
 int main(void)
 {
-  struct qmidev *qmidev = qmidev_new_file("/dev/null");
-  qmidev_call_later(qmidev, hello, NULL);
-  alarm(1);
-  qmidev_process(qmidev);
+  int result;
+
+  mock_qmidev = qmidev_new_mock();
+
+  result = qmidev_connect(mock_qmidev, &connected, NULL);
+  assert(!connected_called);
+  assert(result == 0);
+  process();
+  assert(connected_called);
+
+  result = qmidev_disconnect(mock_qmidev, &disconnected, NULL);
+  assert(!disconnected_called);
+  assert(result == 0);
+  process();
+  assert(disconnected_called);
+
   return 0;
 }
