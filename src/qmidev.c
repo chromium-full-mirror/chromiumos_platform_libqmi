@@ -150,7 +150,7 @@ int qmidev_connect(struct qmidev *qmidev, qmidev_response_fn cb, void *ctx)
   assert(!qmidev->connected);
 
   int result = dev_open(qmidev->dev);
-  if (result < 0)
+  if (result)
     return result;
 
   qmidev->connected = 1;
@@ -183,7 +183,7 @@ int qmidev_disconnect(struct qmidev *qmidev, qmidev_response_fn cb, void *ctx)
   /* TODO: Release clients, etc. */
 
   int result = dev_close(qmidev->dev);
-  if (result < 0)
+  if (result)
     return result;
 
   qmidev->connected = 0;
