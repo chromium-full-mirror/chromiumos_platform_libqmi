@@ -3,6 +3,7 @@
 # found in the LICENSE file.
 
 CFLAGS += -Wall -Wextra -Werror -fPIC -I ../include
+LIBDIR = /usr/lib
 
 all: libqmi.so
 
@@ -19,10 +20,14 @@ test: $(TESTS)
 	./qmidev_unittest
 
 list_unittest: $(LIBQMI_OBJS) list_unittest.o
-	$(CC) $(LDFLAGS) -o $@ $^
+	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ $^
 
 qmidev_unittest: $(LIBQMI_OBJS) qmidev_unittest.o
-	$(CC) $(LDFLAGS) -o $@ $^
+	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ $^
+
+install:
+	install -d $(DESTDIR)$(LIBDIR)
+	install -m755 libqmi.so $(DESTDIR)$(LIBDIR)
 
 clean:
 	rm -f *.o libqmi.so $(TESTS)

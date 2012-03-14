@@ -2,11 +2,5 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-all:
-	+make -C src/ all
-
-test:
-	+make -C src/ test
-
-clean:
-	+make -C src/ clean
+all test install clean:
+	$(MAKE) -C src/ $@
