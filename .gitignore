@@ -1,3 +1,4 @@
 src/*.o
 src/libqmi.so
 src/*_unittest
+src/get_cid_stress_test
