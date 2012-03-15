@@ -6,8 +6,18 @@ CFLAGS += -Wall -Wextra -Werror
 LIBDIR = /usr/lib
 SBINDIR = /usr/sbin
 
-LIBQMI_SRCS = dev.c file.c mock.c poller.c qmictl.c qmidev.c qmimsg.c util.c
-UNITTESTS = qmidev_unittest
+LIBQMI_SRCS = \
+	dev.c \
+	file.c \
+	mock.c \
+	poller.c \
+	qmi.c \
+	qmictl.c \
+	qmidev.c \
+	qmimsg.c \
+	util.c
+UNITTESTS = \
+	qmidev_unittest
 
 PC_CFLAGS := $(shell pkg-config --cflags glib-2.0)
 CFLAGS += -fpic -I ../include $(PC_CFLAGS)

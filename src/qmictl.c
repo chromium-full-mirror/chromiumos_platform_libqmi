@@ -17,8 +17,10 @@
 #include "qmictl.h"
 
 #include <assert.h>
+#include <errno.h>
 #include <glib.h>
 
+#include "qmi.h"
 #include "qmidev.h"
 #include "qmimsg.h"
 #include "util.h"
@@ -33,8 +35,20 @@ enum {
   QMICTL_MSG_RELEASE_CID = 0x0023
 };
 
-#define QMI_TLV_ID 0x01
-#define QMI_TLV_RESULT 0x02
+#define QMI_TLV_ID ((uint8_t)0x01)
+
+struct qmi_cid {
+  uint8_t service;
+  uint8_t client;
+};
+
+static int ctl_get_id(struct qmimsg *message, struct qmi_cid *id_out)
+{
+  assert(message);
+  assert(id_out);
+
+  return qmimsg_tlv_get(message, QMI_TLV_ID, sizeof(*id_out), id_out);
+}
 
 static struct qmimsg *ctl_msg_new(uint16_t transaction, uint16_t message)
 {
@@ -56,11 +70,6 @@ static void ctl_criteria(uint16_t transaction,
   criteria->transaction = transaction;
 }
 
-struct qmi_cid {
-  uint8_t service;
-  uint8_t client;
-};
-
 struct get_cid_context {
   qmictl_get_cid_response_fn callback;
   void *context;
@@ -76,27 +85,32 @@ static int got_cid(struct qmidev *qmidev, void *data,
 
   struct get_cid_context *context = data;
   struct qmi_cid id;
-  struct { uint16_t status; uint16_t error; } result;
+  uint16_t status; uint16_t error;
+  int result;
 
-  if (qmimsg_tlv_get(message, QMI_TLV_RESULT, sizeof(result), &result) ||
-      result.status != 0) {
-    goto fail;
+  id.client = 0;
+
+  result = qmi_result(message, &status, &error);
+  if (result)
+    goto out;
+  if (status) {
+    result = status;
+    goto out;
   }
 
-  if (qmimsg_tlv_get(message, QMI_TLV_ID, sizeof(id), &id) ||
-      id.service != context->service) {
-    goto fail;
+  result = ctl_get_id(message, &id);
+  if (result)
+    goto out;
+  if (id.service != context->service) {
+    result = EINVAL;
+    goto out;
   }
 
-  context->callback(qmidev, context->context, 0, id.client);
-  goto out;
-
-fail:
-  context->callback(qmidev, context->context, -1, 0);
+  result = 0;
 
 out:
+  context->callback(qmidev, context->context, result, id.client);
   g_slice_free(struct get_cid_context, context);
-
   return 1;
 }
 
@@ -138,28 +152,31 @@ static int released_cid(struct qmidev *qmidev, void *data,
 
   struct release_cid_context *context = data;
   struct qmi_cid id;
-  struct { uint16_t status; uint16_t error; } result;
+  uint16_t status; uint16_t error;
+  int result;
 
-  if (qmimsg_tlv_get(message, QMI_TLV_RESULT, sizeof(result), &result) ||
-      result.status != 0) {
-    goto fail;
+  result = qmi_result(message, &status, &error);
+  if (result)
+    goto out;
+  if (status) {
+    result = error;
+    goto out;
   }
 
-  if (qmimsg_tlv_get(message, QMI_TLV_ID, sizeof(id), &id) ||
-      id.service != context->id.service ||
+  result = ctl_get_id(message, &id);
+  if (result)
+    goto out;
+  if (id.service != context->id.service ||
       id.client != context->id.client) {
-    goto fail;
+    result = EINVAL;
+    goto out;
   }
 
-  context->callback(qmidev, context->context, 0);
-  goto out;
-
-fail:
-  context->callback(qmidev, context->context, -1);
+  result = 0;
 
 out:
+  context->callback(qmidev, context->context, result);
   g_slice_free(struct release_cid_context, context);
-
   return 1;
 }
 
