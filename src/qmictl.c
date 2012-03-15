@@ -17,6 +17,7 @@
 #include "qmictl.h"
 
 #include <assert.h>
+#include <glib.h>
 
 #include "qmidev.h"
 #include "qmimsg.h"
@@ -94,7 +95,7 @@ fail:
   context->callback(qmidev, context->context, -1, 0);
 
 out:
-  xfree(context);
+  g_slice_free(struct get_cid_context, context);
 
   return 1;
 }
@@ -103,7 +104,7 @@ int qmictl_get_cid(struct qmidev *qmidev, uint8_t service,
                    qmictl_get_cid_response_fn caller_callback,
                    void *caller_context)
 {
-  struct get_cid_context *context = xmalloc(sizeof(*context));
+  struct get_cid_context *context = g_slice_new(struct get_cid_context);
   context->callback = caller_callback;
   context->context  = caller_context;
   context->service  = service;
@@ -157,7 +158,7 @@ fail:
   context->callback(qmidev, context->context, -1);
 
 out:
-  xfree(context);
+  g_slice_free(struct release_cid_context, context);
 
   return 1;
 }
@@ -166,7 +167,8 @@ int qmictl_release_cid(struct qmidev *qmidev, uint8_t service, uint8_t client,
                        qmidev_response_fn caller_callback,
                        void *caller_context)
 {
-  struct release_cid_context *context = xmalloc(sizeof(*context));
+  struct release_cid_context *context =
+      g_slice_new(struct release_cid_context);
   context->callback   = caller_callback;
   context->context    = caller_context;
   context->id.service = service;

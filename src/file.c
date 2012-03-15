@@ -9,6 +9,7 @@
 #include <assert.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <glib.h>
 #include <stdio.h>
 #include <unistd.h>
 
@@ -101,8 +102,8 @@ static void file_destroy(struct dev *dev)
   assert(dev);
   struct file_priv *priv = dev_priv(dev);
   assert(!FILE_OPEN(priv));
-  xfree(priv->path);
-  xfree(priv);
+  g_free(priv->path);
+  g_slice_free(struct file_priv, priv);
 }
 
 struct dev_ops file_ops = {
@@ -115,9 +116,9 @@ struct dev_ops file_ops = {
 
 struct dev *file_new(struct qmidev *qmidev, const char *path)
 {
-  struct file_priv *priv = xmalloc(sizeof(*priv));
+  struct file_priv *priv = g_slice_new(struct file_priv);
   priv->qmidev = qmidev;
-  priv->path = xstrdup(path);
+  priv->path = g_strdup(path);
   priv->fd = FD_CLOSED;
   return dev_new(&file_ops, priv);
 }

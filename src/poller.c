@@ -7,6 +7,7 @@
 #include "poller.h"
 
 #include <assert.h>
+#include <glib.h>
 #include <stdlib.h>
 #include <sys/epoll.h>
 #include <unistd.h>
@@ -34,7 +35,7 @@ struct poller *poller_new(void)
   int epoll_fd = epoll_create1(0);
   if (epoll_fd < 0)
     return NULL;
-  struct poller *poller = xmalloc(sizeof(*poller));
+  struct poller *poller = g_slice_new(struct poller);
   poller->epoll_fd = epoll_fd;
   poller->num_polled = 0;
   return poller;
@@ -45,7 +46,7 @@ void poller_free(struct poller *poller)
   assert(poller);
   assert(poller->num_polled == 0);
   close(poller->epoll_fd);
-  xfree(poller);
+  g_slice_free(struct poller, poller);
 }
 
 int poller_fd(struct poller *poller)
@@ -58,7 +59,7 @@ struct polled *poller_add(struct poller *poller, int fd)
 {
   assert(poller);
 
-  struct polled *polled = xmalloc(sizeof(*polled));
+  struct polled *polled = g_slice_new(struct polled);
   struct epoll_event event;
 
   polled->poller = poller;
@@ -72,7 +73,7 @@ struct polled *poller_add(struct poller *poller, int fd)
   event.data.ptr = polled;
 
   if (epoll_ctl(poller->epoll_fd, EPOLL_CTL_ADD, fd, &event) < 0) {
-    xfree(polled);
+    g_slice_free(struct polled, polled);
     return NULL;
   }
 
@@ -111,7 +112,7 @@ static int poller_remove(struct poller *poller, struct polled *polled)
   if (result)
     return result;
 
-  xfree(polled);
+  g_slice_free(struct polled, polled);
   poller->num_polled--;
 
   return 0;

@@ -7,6 +7,7 @@
 #include "dev.h"
 
 #include <assert.h>
+#include <glib.h>
 
 #include "util.h"
 
@@ -29,7 +30,7 @@ struct dev *dev_new(struct dev_ops *ops, void *priv)
 {
   assert(ops);
 
-  struct dev *dev = xmalloc(sizeof(*dev));
+  struct dev *dev = g_slice_new(struct dev);
   dev->ops = ops;
   dev->priv = priv;
   dev->flags = 0;
@@ -45,7 +46,7 @@ void dev_destroy(struct dev *dev)
 
   dev->ops->destroy(dev);
 
-  xfree(dev);
+  g_slice_free(struct dev, dev);
 }
 
 void *dev_priv(struct dev *dev)

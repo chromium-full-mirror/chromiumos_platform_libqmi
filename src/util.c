@@ -10,33 +10,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-void *xmalloc(size_t s)
-{
-  void *p = malloc(s);
-  if (!p)
-    abort();
-  return p;
-}
-
-void *xrealloc(void *p, size_t s)
-{
-  void *q = realloc(p, s);
-  if (!q)
-    abort();
-  return q;
-}
-
-char *xstrdup(const char *s)
-{
-  char *t = xmalloc(strlen(s) + 1);
-  return strcpy(t, s);
-}
-
-void xfree(void *p)
-{
-  free(p);
-}
-
 void hexdump(const char *buf, size_t len)
 {
   size_t i;

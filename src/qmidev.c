@@ -8,15 +8,17 @@
 
 #include <assert.h>
 #include <errno.h>
+#include <glib.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
+
+#include <glib.h>
 
 #include <libqmi.h>
 
 #include "dev.h"
 #include "file.h"
-#include "list.h"
 #include "mock.h"
 #include "poller.h"
 #include "qmimsg.h"
@@ -32,8 +34,8 @@ struct qmidev {
   int timerfd;
   struct polled *timer_polled;
 
-  struct list callbacks;
-  struct list listeners;
+  GList *callbacks;
+  GList *listeners;
 
   int connected;
   uint8_t control_tid;
@@ -43,15 +45,11 @@ struct listener {
   struct listen_criteria criteria;
   qmidev_listen_callback_fn callback;
   void *context;
-
-  struct list_node node;
 };
 
 struct callback {
   callback_fn func;
   void *context;
-
-  struct list_node node;
 };
 
 static void call_listeners(struct qmidev *qmidev, struct qmimsg *message);
@@ -59,7 +57,7 @@ static void call_callbacks(struct qmidev *qmidev);
 
 static struct qmidev *qmidev_new(void)
 {
-  struct qmidev *qmidev = xmalloc(sizeof(*qmidev));
+  struct qmidev *qmidev = g_slice_new(struct qmidev);
 
   qmidev->priv = NULL;
 
@@ -67,8 +65,8 @@ static struct qmidev *qmidev_new(void)
   qmidev->dev = NULL;
   qmidev->dev_polled = NULL;
 
-  list_init(&qmidev->callbacks);
-  list_init(&qmidev->listeners);
+  qmidev->callbacks = NULL;
+  qmidev->listeners = NULL;
 
   qmidev->connected = 0;
   qmidev->control_tid = 1;
@@ -140,7 +138,7 @@ static void connect_done(struct qmidev *qmidev, void *data)
   struct connect_context *context = data;
 
   context->callback(qmidev, context->context, context->status);
-  xfree(context);
+  g_slice_free(struct connect_context, context);
 }
 
 int qmidev_connect(struct qmidev *qmidev, qmidev_response_fn cb, void *ctx)
@@ -157,7 +155,7 @@ int qmidev_connect(struct qmidev *qmidev, qmidev_response_fn cb, void *ctx)
 
   /* TODO: Make sure we can talk to card, allocate clients, etc. */
 
-  struct connect_context *context = xmalloc(sizeof(*context));
+  struct connect_context *context = g_slice_new(struct connect_context);
   context->callback = cb;
   context->context = ctx;
   context->status = 0;
@@ -171,7 +169,7 @@ static void disconnect_done(struct qmidev *qmidev, void *data)
   struct connect_context *context = data;
 
   context->callback(qmidev, context->context, context->status);
-  xfree(context);
+  g_slice_free(struct connect_context, context);
 }
 
 int qmidev_disconnect(struct qmidev *qmidev, qmidev_response_fn cb, void *ctx)
@@ -188,7 +186,7 @@ int qmidev_disconnect(struct qmidev *qmidev, qmidev_response_fn cb, void *ctx)
 
   qmidev->connected = 0;
 
-  struct connect_context *context = xmalloc(sizeof(*context));
+  struct connect_context *context = g_slice_new(struct connect_context);
   context->callback = cb;
   context->context = ctx;
   context->status = 0;
@@ -293,27 +291,26 @@ void qmidev_call_later(struct qmidev *qmidev, callback_fn func, void *context)
   assert(qmidev);
   assert(func);
 
-  struct callback *callback = xmalloc(sizeof(*callback));
+  struct callback *callback = g_slice_new(struct callback);
   callback->func = func;
   callback->context = context;
-  list_add(&qmidev->callbacks, &callback->node, callback);
+  qmidev->callbacks = g_list_append(qmidev->callbacks, callback);
 }
 
-static int call_callback(void *context, struct list_node *node, void *item)
+static void call_callback(void *data, void *user_data)
 {
-  struct qmidev *qmidev = context;
-  struct callback *callback = item;
+  struct qmidev *qmidev = user_data;
+  struct callback *callback = data;
 
   callback->func(qmidev, callback->context);
-  list_remove(&qmidev->callbacks, node);
-  xfree(callback);
-
-  return 0;
+  g_slice_free(struct callback, callback);
 }
 
 static void call_callbacks(struct qmidev *qmidev)
 {
-  list_apply(&qmidev->callbacks, call_callback, qmidev);
+  g_list_foreach(qmidev->callbacks, call_callback, qmidev);
+  g_list_free(qmidev->callbacks);
+  qmidev->callbacks = NULL;
 }
 
 
@@ -327,12 +324,13 @@ struct listener *qmidev_listen(struct qmidev *qmidev,
   assert(criteria);
   assert(callback);
 
-  struct listener *listener = xmalloc(sizeof(*listener));
+  struct listener *listener = g_slice_new(struct listener);
 
   listener->criteria = *criteria;
   listener->callback = callback;
   listener->context = context;
-  list_add(&qmidev->listeners, &listener->node, listener);
+
+  qmidev->listeners = g_list_prepend(qmidev->listeners, listener);
 
   return listener;
 }
@@ -342,7 +340,7 @@ void qmidev_cancel_listen(struct qmidev *qmidev, struct listener *listener)
   assert(qmidev);
   assert(listener);
 
-  list_remove(&qmidev->listeners, &listener->node);
+  qmidev->listeners = g_list_remove(qmidev->listeners, listener);
 }
 
 struct call_listener_context {
@@ -353,33 +351,30 @@ struct call_listener_context {
   uint16_t transaction;
 };
 
-static int call_listener(void *data, struct list_node *node, void *item)
+static void call_listener(void *data, void *user_data)
 {
-  struct call_listener_context *context = data;
-  struct listener *listener = item;
+  struct call_listener_context *context = user_data;
+  struct listener *listener = data;
 
   if (listener->criteria.service != context->service)
-    return 0;
+    return;
 
   if ((listener->criteria.client != QMI_CLIENT_BROADCAST) &&
       (listener->criteria.client != context->client))
-    return 0;
+    return;
 
   if ((listener->criteria.transaction != 0) &&
       (listener->criteria.transaction != context->transaction))
-    return 0;
+    return;
 
   int result = listener->callback(context->qmidev,
                                   listener->context,
                                   context->message);
   if (result) {
+    /* The glib documentation does not note this, but it is in safe to call
+       g_list_remove while called back from g_list_foreach. */
     qmidev_cancel_listen(context->qmidev, listener);
   }
-
-  /* unused */
-  node = node;
-
-  return 0;
 }
 
 static void call_listeners(struct qmidev *qmidev, struct qmimsg *message)
@@ -389,5 +384,5 @@ static void call_listeners(struct qmidev *qmidev, struct qmimsg *message)
   context.message = message;
   qmimsg_get_header(message,
                     &context.service, &context.client, &context.transaction);
-  list_apply(&qmidev->listeners, call_listener, &context);
+  g_list_foreach(qmidev->listeners, &call_listener, &context);
 }

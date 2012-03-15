@@ -7,6 +7,7 @@
 #include "mock.h"
 
 #include <assert.h>
+#include <glib.h>
 #include <unistd.h>
 
 #include "dev.h"
@@ -79,7 +80,7 @@ static void mock_destroy(struct dev *dev)
 {
   assert(dev);
   struct mock_priv *priv = dev_priv(dev);
-  xfree(priv);
+  g_slice_free(struct mock_priv, priv);
 }
 
 struct dev_ops mock_ops = {
@@ -94,15 +95,15 @@ struct dev *mock_new(void)
 {
   int result;
 
-  struct mock_priv *priv = xmalloc(sizeof(*priv));
+  struct mock_priv *priv = g_slice_new(struct mock_priv);
   result = pipe(&priv->fds[0]);
   if (result < 0) {
-    xfree(priv);
+    g_slice_free(struct mock_priv, priv);
     return NULL;
   }
   result = pipe(&priv->fds[2]);
   if (result < 0) {
-    xfree(priv);
+    g_slice_free(struct mock_priv, priv);
     return NULL;
   }
   struct dev *dev = dev_new(&mock_ops, priv);

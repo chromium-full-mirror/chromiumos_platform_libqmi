@@ -18,6 +18,7 @@
 #include <assert.h>
 #include <endian.h>
 #include <errno.h>
+#include <glib.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
@@ -73,7 +74,7 @@ struct qmimsg {
       struct control_message control;
       struct service_message service;
     } qmi;
-  } PACKED *buf;
+  } PACKED *buf; /* buf allocated using g_malloc, not g_slice_alloc */
   size_t len; /* cached size of *buf; not part of message. */
 };
 
@@ -247,13 +248,13 @@ int qmimsg_new(uint8_t qmux_flags, uint8_t service, uint8_t client,
 {
   assert(service || (transaction <= UINT8_MAX));
 
-  struct qmimsg *m = xmalloc(sizeof(*m));
+  struct qmimsg *m = g_slice_new(struct qmimsg);
 
   if (!service)
     m->len = 1 + sizeof(struct qmux) + sizeof(struct control_header);
   else
     m->len = 1 + sizeof(struct qmux) + sizeof(struct service_header);
-  m->buf = xmalloc(m->len);
+  m->buf = g_malloc(m->len);
 
   m->buf->marker = QMUX_MARKER;
 
@@ -293,9 +294,9 @@ int qmimsg_read(qmimsg_read_fn read_fn, void *context,
   if (framed_qmux.marker != QMUX_MARKER)
     return EIO;
 
-  m = xmalloc(sizeof(*m));
+  m = g_slice_new(struct qmimsg);
   m->len = le16toh(framed_qmux.qmux.length) + 1;
-  m->buf = xmalloc(m->len);
+  m->buf = g_malloc(m->len);
 
   memcpy(m->buf, &framed_qmux, sizeof(framed_qmux));
   result = read_fn(context, &m->buf->qmi, m->len - sizeof(framed_qmux));
@@ -372,8 +373,8 @@ void qmimsg_print(struct qmimsg *m)
 void qmimsg_free(struct qmimsg *message)
 {
   assert(message);
-  xfree(message->buf);
-  xfree(message);
+  g_free(message->buf);
+  g_slice_free(struct qmimsg, message);
 }
 
 static int qmimsg_tlv_get_internal(struct qmimsg *message,
@@ -434,7 +435,7 @@ int qmimsg_tlv_add(struct qmimsg *m,
 
   /* Resize buffer. */
   m->len += tlv_len;
-  m->buf = xrealloc(m->buf, m->len);
+  m->buf = g_realloc(m->buf, m->len);
 
   /* Fill in new TLV. */
   struct tlv *tlv = (struct tlv *)(qmi_end(m) - tlv_len);
