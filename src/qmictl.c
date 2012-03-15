@@ -25,8 +25,6 @@
 #include "qmimsg.h"
 #include "util.h"
 
-/* This will move to qmi.h once that exists and we add multiple services */
-#define QMI_SERVICE_CTL 0x00
 /* CTL is always client zero. */
 #define QMI_CTL_CLIENT 0x00
 
@@ -54,7 +52,7 @@ static struct qmimsg *ctl_msg_new(uint16_t transaction, uint16_t message)
 {
   struct qmimsg *msg;
 
-  if (qmimsg_new(0, QMI_SERVICE_CTL, QMI_CTL_CLIENT,
+  if (qmimsg_new(0, QMI_SVC_CTL, QMI_CTL_CLIENT,
                  0, transaction, message,
                  &msg))
     return NULL;
@@ -65,7 +63,7 @@ static struct qmimsg *ctl_msg_new(uint16_t transaction, uint16_t message)
 static void ctl_criteria(uint16_t transaction,
                          struct listen_criteria *criteria)
 {
-  criteria->service = QMI_SERVICE_CTL;
+  criteria->service = QMI_SVC_CTL;
   criteria->client = QMI_CTL_CLIENT;
   criteria->transaction = transaction;
 }

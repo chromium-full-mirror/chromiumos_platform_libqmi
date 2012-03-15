@@ -359,7 +359,7 @@ static void call_listener(void *data, void *user_data)
   if (listener->criteria.service != context->service)
     return;
 
-  if ((listener->criteria.client != QMI_CLIENT_BROADCAST) &&
+  if ((listener->criteria.client != QMI_CID_BROADCAST) &&
       (listener->criteria.client != context->client))
     return;
 

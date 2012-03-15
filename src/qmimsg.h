@@ -16,8 +16,6 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#define QMI_CLIENT_BROADCAST ((uint8_t)0xFF)
-
 struct qmimsg;
 
 /**
