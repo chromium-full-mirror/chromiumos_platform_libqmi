@@ -21,6 +21,8 @@
 #include "file.h"
 #include "mock.h"
 #include "poller.h"
+#include "qmi.h"
+#include "qmictl.h"
 #include "qmimsg.h"
 #include "util.h"
 
@@ -36,9 +38,16 @@ struct qmidev {
 
   GList *callbacks;
   GList *listeners;
+  GList *services;
 
   int connected;
   uint8_t control_tid;
+};
+
+struct qmisvc {
+  uint8_t sid;
+  uint8_t cid;
+  uint16_t next_tid;
 };
 
 struct listener {
@@ -126,71 +135,166 @@ int qmidev_process(struct qmidev *qmidev)
   return poller_poll(qmidev->poller);
 }
 
+static struct qmisvc *qmisvc_alloc(uint8_t sid)
+{
+  struct qmisvc *svc = g_slice_new(struct qmisvc);
+  svc->sid = sid;
+  svc->cid = QMI_CID_NONE;
+  svc->next_tid = 1;
+  return svc;
+}
+
+static void qmisvc_free(struct qmisvc *svc)
+{
+  g_slice_free(struct qmisvc, svc);
+}
+
 struct connect_context {
-  qmidev_response_fn callback;
-  void *context;
-  int status;
+  GQueue *pending_services;
+  struct qmisvc *current_service;
+
+  qmidev_response_fn caller_callback;
+  void *caller_context;
 };
 
-/* TODO: This can be made generic, for any qmidev_response_fn. */
-static void connect_done(struct qmidev *qmidev, void *data)
+static void connect_next_service(struct qmidev *qmidev,
+                                 struct connect_context *context);
+
+static void got_cid(struct qmidev *qmidev,
+                    void *data,
+                    int status,
+                    uint8_t cid)
 {
   struct connect_context *context = data;
 
-  context->callback(qmidev, context->context, context->status);
-  g_slice_free(struct connect_context, context);
+  if (!status) {
+    context->current_service->cid = cid;
+    qmidev->services = g_list_prepend(qmidev->services,
+                                      context->current_service);
+  } else {
+    qmisvc_free(context->current_service);
+  }
+
+  connect_next_service(qmidev, context);
 }
 
-int qmidev_connect(struct qmidev *qmidev, qmidev_response_fn cb, void *ctx)
+static void connect_next_service(struct qmidev *qmidev,
+                                 struct connect_context *context)
+{
+  if (g_queue_is_empty(context->pending_services)) {
+    context->caller_callback(qmidev, context->caller_context, 0);
+    g_queue_free(context->pending_services);
+    g_slice_free(struct connect_context, context);
+    return;
+  }
+
+  context->current_service = g_queue_pop_head(context->pending_services);
+  /* TODO: Check return */
+  qmictl_get_cid(qmidev, context->current_service->sid,
+                 &got_cid, context);
+}
+
+int qmidev_connect(struct qmidev *qmidev,
+                   qmidev_response_fn caller_callback,
+                   void *caller_context)
 {
   assert(qmidev);
-  assert(cb);
+  assert(caller_callback);
   assert(!qmidev->connected);
 
   int result = dev_open(qmidev->dev);
+  /* TODO: Should this go through the callback instead? */
   if (result)
     return result;
 
   qmidev->connected = 1;
 
-  /* TODO: Make sure we can talk to card, allocate clients, etc. */
-
   struct connect_context *context = g_slice_new(struct connect_context);
-  context->callback = cb;
-  context->context = ctx;
-  context->status = 0;
-  qmidev_call_later(qmidev, &connect_done, context);
+  context->caller_callback = caller_callback;
+  context->caller_context = caller_context;
+  context->current_service = NULL;
+  context->pending_services = g_queue_new();
+
+  g_queue_push_tail(context->pending_services, qmisvc_alloc(QMI_SVC_WDS));
+  g_queue_push_tail(context->pending_services, qmisvc_alloc(QMI_SVC_DMS));
+  g_queue_push_tail(context->pending_services, qmisvc_alloc(QMI_SVC_NAS));
+  g_queue_push_tail(context->pending_services, qmisvc_alloc(QMI_SVC_QOS));
+  g_queue_push_tail(context->pending_services, qmisvc_alloc(QMI_SVC_WMS));
+  g_queue_push_tail(context->pending_services, qmisvc_alloc(QMI_SVC_PDS));
+  g_queue_push_tail(context->pending_services, qmisvc_alloc(QMI_SVC_AUTH));
+  g_queue_push_tail(context->pending_services, qmisvc_alloc(QMI_SVC_VOICE));
+  g_queue_push_tail(context->pending_services, qmisvc_alloc(QMI_SVC_CAT));
+  g_queue_push_tail(context->pending_services, qmisvc_alloc(QMI_SVC_RMS));
+  g_queue_push_tail(context->pending_services, qmisvc_alloc(QMI_SVC_OMA));
+
+  connect_next_service(qmidev, context);
 
   return 0;
 }
 
-static void disconnect_done(struct qmidev *qmidev, void *data)
-{
-  struct connect_context *context = data;
+struct disconnect_context {
+  struct qmisvc *current_service;
 
-  context->callback(qmidev, context->context, context->status);
-  g_slice_free(struct connect_context, context);
+  qmidev_response_fn caller_callback;
+  void *caller_context;
+};
+
+static void services_disconnected(struct qmidev *qmidev,
+                                  struct disconnect_context *context)
+{
+  int result = dev_close(qmidev->dev);
+  qmidev->connected = 0;
+  context->caller_callback(qmidev, context->caller_context, result);
+  g_slice_free(struct disconnect_context, context);
 }
 
-int qmidev_disconnect(struct qmidev *qmidev, qmidev_response_fn cb, void *ctx)
+static void disconnect_next_service(struct qmidev *qmidev,
+                                    struct disconnect_context *context);
+
+static void released_cid(struct qmidev *qmidev,
+                         void *data,
+                         int status)
+{
+  struct disconnect_context *context = data;
+
+  if (status) {
+    /* TODO: What do we do if release fails? */
+  }
+
+  qmisvc_free(context->current_service);
+  disconnect_next_service(qmidev, context);
+}
+
+static void disconnect_next_service(struct qmidev *qmidev,
+                                    struct disconnect_context *context)
+{
+  if (!qmidev->services) {
+    services_disconnected(qmidev, context);
+    return;
+  }
+
+  context->current_service = qmidev->services->data;
+  qmidev->services = g_list_remove(qmidev->services, context->current_service);
+  /* TODO: Check return */
+  qmictl_release_cid(qmidev, context->current_service->sid,
+                     context->current_service->cid,
+                     &released_cid, context);
+}
+
+int qmidev_disconnect(struct qmidev *qmidev,
+                      qmidev_response_fn caller_callback,
+                      void *caller_context)
 {
   assert(qmidev);
-  assert(cb);
+  assert(caller_callback);
   assert(qmidev->connected);
 
-  /* TODO: Release clients, etc. */
+  struct disconnect_context *context = g_slice_new(struct disconnect_context);
+  context->caller_callback = caller_callback;
+  context->caller_context = caller_context;
+  context->current_service = NULL;
 
-  int result = dev_close(qmidev->dev);
-  if (result)
-    return result;
-
-  qmidev->connected = 0;
-
-  struct connect_context *context = g_slice_new(struct connect_context);
-  context->callback = cb;
-  context->context = ctx;
-  context->status = 0;
-  qmidev_call_later(qmidev, &disconnect_done, context);
+  disconnect_next_service(qmidev, context);
 
   return 0;
 }

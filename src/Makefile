@@ -18,6 +18,9 @@ LIBQMI_SRCS = \
 	util.c
 UNITTESTS = \
 	qmidev_unittest
+TESTS = \
+	connect_disconnect_test \
+	get_cid_stress_test
 
 PC_CFLAGS := $(shell pkg-config --cflags glib-2.0)
 CFLAGS += -fpic -I ../include $(PC_CFLAGS)
@@ -27,7 +30,7 @@ LDLIBS += $(PC_LIBS)
 LIBQMI_OBJS = $(LIBQMI_SRCS:.c=.o)
 LINK.c = $(CC) $(CFLAGS) $(LDFLAGS) -o $@ $^ $(LDLIBS)
 
-all: libqmi.so get_cid_stress_test
+all: libqmi.so $(TESTS)
 
 libqmi.so: LDFLAGS += -Wl,-soname,libqmi.so -shared
 libqmi.so: $(LIBQMI_OBJS)
@@ -39,7 +42,11 @@ test: $(UNITTESTS)
 qmidev_unittest: $(LIBQMI_OBJS) qmidev_unittest.o
 	$(LINK.c)
 
-get_cid_stress_test: LDLIBS += libqmi.so
+$(TESTS): LDLIBS += libqmi.so
+
+connect_disconnect_test: connect_disconnect_test.o | libqmi.so
+	$(LINK.c)
+
 get_cid_stress_test: get_cid_stress_test.o | libqmi.so
 	$(LINK.c)
 
@@ -47,7 +54,8 @@ install:
 	install -d $(DESTDIR)$(LIBDIR)
 	install -m755 libqmi.so $(DESTDIR)$(LIBDIR)
 	install -d $(DESTDIR)$(SBINDIR)
+	install -m755 connect_disconnect_test $(DESTDIR)$(SBINDIR)
 	install -m755 get_cid_stress_test $(DESTDIR)$(SBINDIR)
 
 clean:
-	rm -f *.o libqmi.so $(UNITTESTS) get_cid_stress_test
+	rm -f *.o libqmi.so $(UNITTESTS) $(TESTS)
