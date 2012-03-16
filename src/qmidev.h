@@ -50,6 +50,47 @@ int qmidev_clear_dev_fd(struct qmidev *qmidev);
 struct polled *qmidev_poll(struct qmidev *qmidev, int fd);
 
 /**
+ * Callback type for QMI requests made with qmidev_send_request.
+ *
+ * @resp_msg: The response message received, or NULL if none.
+ */
+typedef void (*qmidev_request_fn)(struct qmidev *qmidev,
+                                  void *context,
+                                  int status,
+                                  struct qmimsg *resp_msg);
+
+/**
+ * Creates a new QMI message for a request.
+ *
+ * The service and message ID fields of the message will be filled from the
+ * respective parameters.  The client ID is set to the client ID allocated
+ * by the qmidev for this service, and the transaction ID is assigned
+ * sequentially within that client.
+ *
+ * @service: The service to which the request will be sent
+ * @req_msg_id: The message ID of the request
+ */
+int qmidev_make_request(struct qmidev *qmidev,
+                        uint8_t service_id,
+                        uint16_t req_msg_id,
+                        struct qmimsg **message_out);
+
+/**
+ * Sends a request message created with qmidev_make_request, and listens for
+ * a reply.
+ *
+ * @req_msg: The message returned from qmidev_make_request
+ * @resp_msg_id: The expected message ID of the response
+ * @callback: The callback to call when a response is received
+ * @context: The context with which to call the callback
+ */
+int qmidev_send_request(struct qmidev *qmidev,
+                        struct qmimsg *req_msg,
+                        uint16_t resp_msg_id,
+                        qmidev_request_fn callback,
+                        void *context);
+
+/**
  * Sends a QMI message.
  * Returns zero on success, errno on failure.
  */

@@ -215,6 +215,7 @@ int qmidev_connect(struct qmidev *qmidev,
   context->current_service = NULL;
   context->pending_services = g_queue_new();
 
+  qmidev->services = g_list_append(qmidev->services, qmisvc_alloc(QMI_SVC_CTL));
   g_queue_push_tail(context->pending_services, qmisvc_alloc(QMI_SVC_WDS));
   g_queue_push_tail(context->pending_services, qmisvc_alloc(QMI_SVC_DMS));
   g_queue_push_tail(context->pending_services, qmisvc_alloc(QMI_SVC_NAS));
@@ -276,9 +277,14 @@ static void disconnect_next_service(struct qmidev *qmidev,
   context->current_service = qmidev->services->data;
   qmidev->services = g_list_remove(qmidev->services, context->current_service);
   /* TODO: Check return */
-  qmictl_release_cid(qmidev, context->current_service->sid,
-                     context->current_service->cid,
-                     &released_cid, context);
+  if (context->current_service->sid != QMI_SVC_CTL) {
+    qmictl_release_cid(qmidev, context->current_service->sid,
+                       context->current_service->cid,
+                       &released_cid, context);
+  } else {
+    qmisvc_free(context->current_service);
+    disconnect_next_service(qmidev, context);
+  }
 }
 
 int qmidev_disconnect(struct qmidev *qmidev,
@@ -295,6 +301,136 @@ int qmidev_disconnect(struct qmidev *qmidev,
   context->current_service = NULL;
 
   disconnect_next_service(qmidev, context);
+
+  return 0;
+}
+
+gint service_compare_sid(gconstpointer a, gconstpointer b)
+{
+  const struct qmisvc *svc_a = a;
+  const struct qmisvc *svc_b = b;
+
+  return svc_a->sid - svc_b->sid;
+}
+
+struct qmisvc *find_service(struct qmidev *qmidev, uint8_t service_id)
+{
+  struct qmisvc wanted;
+  wanted.sid = service_id;
+
+  GList *found_list = g_list_find_custom(qmidev->services, &wanted,
+                                         &service_compare_sid);
+  if (found_list)
+    return (struct qmisvc *) found_list->data;
+  else
+    return NULL;
+}
+
+uint16_t get_free_tid(struct qmisvc *service)
+{
+  uint16_t next_tid = service->next_tid;
+
+  /* CTL uses 8-bit transaction IDs; other services use 16-bit. */
+  uint16_t max_tid = (service->sid == QMI_SVC_CTL) ? 0x00FF : 0xFFFF;
+  if (service->next_tid < max_tid)
+    service->next_tid++;
+  else
+    service->next_tid = 0x0001;
+
+  return next_tid;
+}
+
+int qmidev_make_request(struct qmidev *qmidev,
+                        uint8_t service_id,
+                        uint16_t req_msg_id,
+                        struct qmimsg **message_out)
+{
+  struct qmisvc *service;
+  uint16_t transaction_id;
+  struct qmimsg *message;
+  int result;
+
+  assert(qmidev);
+
+  service = find_service(qmidev, service_id);
+  if (!service)
+    return ENOENT;
+
+  transaction_id = get_free_tid(service);
+
+  result = qmimsg_new(0, service_id, service->cid,
+                      0, transaction_id, req_msg_id,
+                      &message);
+  if (result)
+    return result;
+
+  *message_out = message;
+
+  return 0;
+}
+
+struct request_context {
+  uint16_t resp_msg_id;
+
+  qmidev_request_fn caller_callback;
+  void *caller_context;
+};
+
+int got_reply(struct qmidev *qmidev, void *data, struct qmimsg *message)
+{
+  struct request_context *context = data;
+  int result;
+  uint16_t status, error;
+
+  /* TODO: Check response message ID. */
+
+  result = qmi_result(message, &status, &error);
+  if (result)
+    goto out;
+  if (status) {
+    result = error;
+    goto out;
+  }
+
+  result = 0;
+
+out:
+  context->caller_callback(qmidev, context->caller_context, result, message);
+  g_slice_free(struct request_context, context);
+  return 1;
+}
+
+int qmidev_send_request(struct qmidev *qmidev,
+                        struct qmimsg *req_msg,
+                        uint16_t resp_msg_id,
+                        qmidev_request_fn caller_callback,
+                        void *caller_context)
+{
+  struct request_context *context = g_slice_new(struct request_context);
+
+  context->caller_callback = caller_callback;
+  context->caller_context = caller_context;
+  context->resp_msg_id = resp_msg_id;
+
+  struct listen_criteria criteria;
+  qmimsg_get_header(req_msg,
+                    &criteria.service,
+                    &criteria.client,
+                    &criteria.transaction);
+  struct listener *listener = qmidev_listen(qmidev, &criteria,
+                                            &got_reply, context);
+
+  /* TODO: Do something with listener?  Currently we don't need it for
+     anything, but once we add timeouts we'll need to be able to cancel
+     it. */
+
+  int result = qmidev_send(qmidev, req_msg);
+  if (result) {
+    qmidev_cancel_listen(qmidev, listener);
+    g_slice_free(struct request_context, context);
+    qmimsg_free(req_msg);
+    return result;
+  }
 
   return 0;
 }
