@@ -385,17 +385,19 @@ static int qmimsg_tlv_get_internal(struct qmimsg *message,
 {
   assert(message);
   assert(message->buf);
+  assert(length);
 
   struct tlv *tlv;
   for (tlv = qmi_tlv_first(message); tlv; tlv = qmi_tlv_next(message, tlv)) {
     if (tlv->type == type) {
       if (length_exact && (tlv->length != *length)) {
         return EINVAL;
-      } else if (tlv->length > *length) {
+      } else if (value && tlv->length > *length) {
         return ENOSPC;
       }
       *length = tlv->length;
-      memcpy(value, tlv->value, tlv->length);
+      if (value)
+        memcpy(value, tlv->value, tlv->length);
       return 0;
     }
   }
@@ -406,6 +408,8 @@ static int qmimsg_tlv_get_internal(struct qmimsg *message,
 int qmimsg_tlv_get(struct qmimsg *message,
                    uint8_t type, uint16_t length, void *value)
 {
+  assert(value);
+
   return qmimsg_tlv_get_internal(message, type, &length, value, 1);
 }
 

@@ -77,7 +77,10 @@ int qmimsg_tlv_get(struct qmimsg *message,
 
 /**
  * Finds a TLV element with the given type in the payload of the given QMI
- * message and copies the value into value.
+ * message, copies the length into length, and copies the value into value.
+ *
+ * If value is NULL, overwrites length with the length of the message without
+ * checking the existing value of length.
  *
  * Returns 0 if the element was found and fit into the buffer;
  * ENOSPC if the element was found but the value was too big;
