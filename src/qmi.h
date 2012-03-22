@@ -53,4 +53,9 @@ enum {
 int qmi_result(struct qmimsg *message,
                uint16_t *status_out, uint16_t *error_out);
 
+int qmi_tlv_strdup(struct qmimsg *message,
+                   uint8_t type,
+                   uint16_t *size_out,
+                   char **value_out);
+
 #endif /* LIBQMI_QMIDEV_H */

@@ -7,6 +7,7 @@
 #include "qmi.h"
 
 #include <assert.h>
+#include <glib.h>
 #include <stdint.h>
 
 #include "qmimsg.h"
@@ -36,6 +37,34 @@ int qmi_result(struct qmimsg *message,
 
   *status_out = qmi_result.status;
   *error_out = qmi_result.error;
+
+  return 0;
+}
+
+int qmi_tlv_strdup(struct qmimsg *message,
+                   uint8_t type,
+                   uint16_t *length_out,
+                   char **value_out)
+{
+  assert(message);
+  assert(value_out);
+
+  uint16_t length;
+  char *value;
+  int result;
+
+  result = qmimsg_tlv_get_varlen(message, type, &length, NULL);
+  if (result)
+    return result;
+
+  value = g_malloc(length + 1);
+  result = qmimsg_tlv_get(message, type, length, value);
+  assert(result == 0);
+
+  value[length] = '\0';
+  *value_out = value;
+  if (length_out)
+    *length_out = length;
 
   return 0;
 }
