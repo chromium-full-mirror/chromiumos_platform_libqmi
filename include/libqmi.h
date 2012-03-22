@@ -779,12 +779,12 @@ int qmidev_get_rf_info(
   void *context);
 
 /**
- * Callback type for qmidev_get_serial_numbers.
+ * Callback type for qmidev_get_ids.
  * @esn: Electronic Serial Number,
  * @imei: International Mobile Equipment Identifier
  * @meid: Mobile Equipment Identifier
  */
-typedef void (*qmidev_serial_numbers_response_fn)(
+typedef void (*qmidev_get_ids_response_fn)(
   qmidev *dev,
   void *context,
   int status,
@@ -793,9 +793,9 @@ typedef void (*qmidev_serial_numbers_response_fn)(
   const char *meid);
 
 /* Gets the serial numbers of the device. */
-int qmidev_get_serial_numbers(
+int qmidev_get_ids(
   qmidev *dev,
-  qmidev_serial_numbers_response_fn callback,
+  qmidev_get_ids_response_fn callback,
   void *context);
 
 /* TODO: enums */

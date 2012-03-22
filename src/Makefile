@@ -14,6 +14,7 @@ LIBQMI_SRCS = \
 	qmi.c \
 	qmictl.c \
 	qmidev.c \
+	qmidms.c \
 	qmimsg.c \
 	util.c
 UNITTESTS = \
