@@ -30,11 +30,19 @@
 #define QMI_CTL_CLIENT 0x00
 
 enum {
-  QMICTL_MSG_GET_CID = 0x0022,
-  QMICTL_MSG_RELEASE_CID = 0x0023
+  QMICTL_MSG_SET_INSTANCE_ID = 0x0020,
+  QMICTL_MSG_GET_VERSION_INFO,
+  QMICTL_MSG_GET_CLIENT_ID,
+  QMICTL_MSG_RELEASE_CLIENT_ID,
+  QMICTL_MSG_REVOKE_CLIENT_ID,
+  QMICTL_MSG_INVALID_CLIENT_ID,
+  QMICTL_MSG_SET_DATA_FORMAT,
+  QMICTL_MSG_SYNC,
+  QMICTL_MSG_EVENT,
+  QMICTL_MSG_SET_POWER_SAVE_CONFIG,
+  QMICTL_MSG_SET_POWER_SAVE_MODE,
+  QMICTL_MSG_GET_POWER_SAVE_MODE
 };
-
-#define QMI_TLV_ID ((uint8_t)0x01)
 
 struct qmi_cid {
   uint8_t service;
@@ -46,7 +54,7 @@ static int ctl_get_id(struct qmimsg *message, struct qmi_cid *id_out)
   assert(message);
   assert(id_out);
 
-  return qmimsg_tlv_get(message, QMI_TLV_ID, sizeof(*id_out), id_out);
+  return qmimsg_tlv_get(message, QMI_TLV_VALUE, sizeof(*id_out), id_out);
 }
 
 struct get_cid_context {
@@ -103,15 +111,17 @@ int qmictl_get_cid(struct qmidev *qmidev, uint8_t service,
   context->service  = service;
 
   struct qmimsg *message;
-  result = qmidev_make_request(qmidev, QMI_SVC_CTL, QMICTL_MSG_GET_CID,
+  result = qmidev_make_request(qmidev,
+                               QMI_SVC_CTL,
+                               QMICTL_MSG_GET_CLIENT_ID,
                                &message);
   if (result)
     goto fail;
 
-  qmimsg_tlv_add(message, QMI_TLV_ID, sizeof(service), &service);
+  qmimsg_tlv_add(message, QMI_TLV_VALUE, sizeof(service), &service);
 
   result = qmidev_send_request(qmidev, message,
-                               QMICTL_MSG_GET_CID,
+                               QMICTL_MSG_GET_CLIENT_ID,
                                &got_cid, context);
   if (result)
     goto fail;
@@ -178,15 +188,17 @@ int qmictl_release_cid(struct qmidev *qmidev, uint8_t service, uint8_t client,
   context->id.client  = client;
 
   struct qmimsg *message;
-  result = qmidev_make_request(qmidev, QMI_SVC_CTL, QMICTL_MSG_RELEASE_CID,
+  result = qmidev_make_request(qmidev,
+                               QMI_SVC_CTL,
+                               QMICTL_MSG_RELEASE_CLIENT_ID,
                                &message);
   if (result)
     goto fail;
 
-  qmimsg_tlv_add(message, QMI_TLV_ID, sizeof(context->id), &context->id);
+  qmimsg_tlv_add(message, QMI_TLV_VALUE, sizeof(context->id), &context->id);
 
   result = qmidev_send_request(qmidev, message,
-                               QMICTL_MSG_RELEASE_CID,
+                               QMICTL_MSG_RELEASE_CLIENT_ID,
                                &released_cid, context);
   if (result)
     goto fail;

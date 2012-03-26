@@ -15,8 +15,14 @@
 
 struct qmimsg;
 
-#define QMI_CID_NONE ((uint8_t)0x00)
-#define QMI_CID_BROADCAST ((uint8_t)0xFF)
+enum {
+  QMI_CID_NONE = 0x00,
+  QMI_CID_BROADCAST = 0xFF
+};
+
+enum {
+  QMI_TLV_VALUE = 0x01
+};
 
 enum {
   /** Control service */
