@@ -23,6 +23,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "error.h"
 #include "util.h"
 
 #define PACKED __attribute__((packed))
@@ -292,7 +293,7 @@ int qmimsg_read(qmimsg_read_fn read_fn, void *context,
   if (result)
     return result;
   if (framed_qmux.marker != QMUX_MARKER)
-    return EIO;
+    return QMI_ERR_FRAMING_INVALID;
 
   m = g_slice_new(struct qmimsg);
   m->len = le16toh(framed_qmux.qmux.length) + 1;
@@ -307,7 +308,7 @@ int qmimsg_read(qmimsg_read_fn read_fn, void *context,
 
   if (!qmi_check(m)) {
     qmimsg_free(m);
-    return EIO;
+    return QMI_ERR_HEADER_INVALID;
   }
 
   *message_out = m;
@@ -391,9 +392,9 @@ static int qmimsg_tlv_get_internal(struct qmimsg *message,
   for (tlv = qmi_tlv_first(message); tlv; tlv = qmi_tlv_next(message, tlv)) {
     if (tlv->type == type) {
       if (length_exact && (tlv->length != *length)) {
-        return EINVAL;
+        return QMI_ERR_TLV_NOT_FOUND;
       } else if (value && tlv->length > *length) {
-        return ENOSPC;
+        return QMI_ERR_TOO_LONG;
       }
       *length = tlv->length;
       if (value)
@@ -402,7 +403,7 @@ static int qmimsg_tlv_get_internal(struct qmimsg *message,
     }
   }
 
-  return ENOENT;
+  return QMI_ERR_TLV_NOT_FOUND;
 }
 
 int qmimsg_tlv_get(struct qmimsg *message,
@@ -434,7 +435,7 @@ int qmimsg_tlv_add(struct qmimsg *m,
 
   /* Check for overflow of message size. */
   if (qmux_length(m) + tlv_len > UINT16_MAX) {
-    return ENOSPC;
+    return QMI_ERR_TOO_LONG;
   }
 
   /* Resize buffer. */

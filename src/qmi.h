@@ -48,10 +48,13 @@ enum {
 };
 
 /**
- * Gets the result (status and error) from a TLV message.
+ * Gets the result from a TLV message.
+ *
+ * Returns 0 if the result code indicates success, an appropriate error
+ * code if the result code indicates failure, or QMI_ERR_MESSAGE_INVALID
+ * if the message does not contain a result code TLV.
  */
-int qmi_result(struct qmimsg *message,
-               uint16_t *status_out, uint16_t *error_out);
+int qmi_result(struct qmimsg *message);
 
 int qmi_tlv_strdup(struct qmimsg *message,
                    uint8_t type,

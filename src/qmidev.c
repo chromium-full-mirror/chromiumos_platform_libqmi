@@ -18,6 +18,7 @@
 #include <libqmi.h>
 
 #include "dev.h"
+#include "error.h"
 #include "file.h"
 #include "mock.h"
 #include "poller.h"
@@ -200,7 +201,9 @@ int qmidev_connect(struct qmidev *qmidev,
 {
   assert(qmidev);
   assert(caller_callback);
-  assert(!qmidev->connected);
+
+  if (qmidev->connected)
+    return QMI_ERR_ALREADY_CONNECTED;
 
   int result = dev_open(qmidev->dev);
   /* TODO: Should this go through the callback instead? */
@@ -293,7 +296,9 @@ int qmidev_disconnect(struct qmidev *qmidev,
 {
   assert(qmidev);
   assert(caller_callback);
-  assert(qmidev->connected);
+
+  if (!qmidev->connected)
+    return QMI_ERR_NOT_CONNECTED;
 
   struct disconnect_context *context = g_slice_new(struct disconnect_context);
   context->caller_callback = caller_callback;
@@ -351,10 +356,11 @@ int qmidev_make_request(struct qmidev *qmidev,
   int result;
 
   assert(qmidev);
+  assert(message_out);
 
   service = find_service(qmidev, service_id);
   if (!service)
-    return ENOENT;
+    return QMI_ERR_SERVICE_UNAVAILABLE;
 
   transaction_id = get_free_tid(service);
 
@@ -380,19 +386,12 @@ int got_reply(struct qmidev *qmidev, void *data, struct qmimsg *message)
 {
   struct request_context *context = data;
   int result;
-  uint16_t status, error;
 
   /* TODO: Check response message ID. */
 
-  result = qmi_result(message, &status, &error);
+  result = qmi_result(message);
   if (result)
     goto out;
-  if (status) {
-    result = error;
-    goto out;
-  }
-
-  result = 0;
 
 out:
   context->caller_callback(qmidev, context->caller_context, result, message);
@@ -406,6 +405,13 @@ int qmidev_send_request(struct qmidev *qmidev,
                         qmidev_request_fn caller_callback,
                         void *caller_context)
 {
+  assert(qmidev);
+  assert(req_msg);
+  assert(caller_callback);
+
+  if (!qmidev->connected)
+    return QMI_ERR_NOT_CONNECTED;
+
   struct request_context *context = g_slice_new(struct request_context);
 
   context->caller_callback = caller_callback;
@@ -476,7 +482,7 @@ int qmidev_set_dev_fd(struct qmidev *qmidev, int fd)
 
   qmidev->dev_polled = poller_add(qmidev->poller, fd);
   if (!qmidev->dev_polled)
-    return ENOMEM;
+    return QMI_ERR_INTERNAL;
   polled_set_priv(qmidev->dev_polled, qmidev);
   polled_set_read(qmidev->dev_polled, &dev_read_cb);
   polled_set_close(qmidev->dev_polled, &dev_close_cb);

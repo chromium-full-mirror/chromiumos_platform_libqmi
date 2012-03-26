@@ -10,6 +10,7 @@
 #include <glib.h>
 #include <stdint.h>
 
+#include "error.h"
 #include "qmimsg.h"
 
 struct qmi_result {
@@ -21,24 +22,30 @@ struct qmi_result {
    (grep "Result Code" [Gobi3000API]/Database/QMI/Entity.txt) */
 #define QMI_TLV_RESULT_CODE ((uint8_t)0x02)
 
-int qmi_result(struct qmimsg *message,
-               uint16_t *status_out, uint16_t *error_out)
+enum {
+  QMI_STATUS_SUCCESS = 0x0000,
+  QMI_STATUS_FAILURE = 0x0001
+};
+
+int qmi_result(struct qmimsg *message)
 {
   assert(message);
-  assert(status_out);
-  assert(error_out);
 
-  struct qmi_result qmi_result;
+  struct qmi_result msg_result;
 
   int result = qmimsg_tlv_get(message, QMI_TLV_RESULT_CODE,
-                              sizeof(qmi_result), &qmi_result);
+                              sizeof(msg_result), &msg_result);
   if (result)
-    return result;
+    return QMI_ERR_MESSAGE_INVALID;
 
-  *status_out = qmi_result.status;
-  *error_out = qmi_result.error;
-
-  return 0;
+  switch (msg_result.status) {
+  case QMI_STATUS_SUCCESS:
+    return 0;
+  case QMI_STATUS_FAILURE:
+    return QMI_ERR_DEVICE_OFFSET + msg_result.error;
+  default:
+    return QMI_ERR_MESSAGE_INVALID;
+  }
 }
 
 int qmi_tlv_strdup(struct qmimsg *message,

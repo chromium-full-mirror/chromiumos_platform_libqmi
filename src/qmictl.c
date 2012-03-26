@@ -20,6 +20,7 @@
 #include <errno.h>
 #include <glib.h>
 
+#include "error.h"
 #include "qmi.h"
 #include "qmidev.h"
 #include "qmimsg.h"
@@ -79,7 +80,7 @@ static void got_cid(struct qmidev *qmidev,
     goto out;
 
   if (id.service != context->service) {
-    result = EINVAL;
+    result = QMI_ERR_MESSAGE_INVALID;
     goto out;
   }
 
@@ -152,7 +153,7 @@ static void released_cid(struct qmidev *qmidev,
 
   if (id.service != context->id.service ||
       id.client != context->id.client) {
-    result = EINVAL;
+    result = QMI_ERR_MESSAGE_INVALID;
     goto out;
   }
 
