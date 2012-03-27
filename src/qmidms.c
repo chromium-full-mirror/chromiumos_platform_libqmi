@@ -20,6 +20,7 @@
 
 #include <libqmi.h>
 
+#include "error.h"
 #include "qmi.h"
 #include "qmidev.h"
 #include "qmimsg.h"
@@ -168,35 +169,6 @@ fail:
   return result;
 }
 
-struct set_power_context {
-  qmidev_response_fn caller_callback;
-  void *caller_context;
-};
-
-static void set_power(struct qmidev *qmidev,
-                         void *data,
-                         int status,
-                         struct qmimsg *message)
-{
-  assert(qmidev);
-  assert(data);
-
-  struct set_power_context *context = data;
-  int result;
-
-  if (status) {
-    result = status;
-    goto out;
-  }
-
-  message = message;
-  result = 0;
-
-out:
-  context->caller_callback(qmidev, context->caller_context, result);
-  g_slice_free(struct set_power_context, context);
-}
-
 int qmidev_set_power(struct qmidev *qmidev,
                      qmidev_power_state state,
                      qmidev_response_fn caller_callback,
@@ -205,25 +177,18 @@ int qmidev_set_power(struct qmidev *qmidev,
   uint8_t mode = state;
   int result;
 
-  struct set_power_context *context = g_slice_new(struct set_power_context);
-  context->caller_callback = caller_callback;
-  context->caller_context  = caller_context;
-
   struct qmimsg *message;
   result = qmidev_make_request(qmidev,
                                QMI_SVC_DMS,
                                QMIDMS_MSG_SET_OPERATING_MODE,
                                &message);
-  qmimsg_tlv_add(message, QMI_TLV_VALUE, sizeof(mode), &mode);
-  result = qmidev_send_request(qmidev, message,
-                               QMIDMS_MSG_SET_OPERATING_MODE,
-                               &set_power, context);
   if (result)
-    goto fail;
-
-  return 0;
-
-fail:
-  g_slice_free(struct set_power_context, context);
-  return result;
+    return result;
+  result = qmimsg_tlv_add(message, QMI_TLV_VALUE, sizeof(mode), &mode);
+  if (result)
+    return QMI_ERR_INTERNAL;
+  return qmidev_send_void_request(qmidev, message,
+                                  QMIDMS_MSG_SET_OPERATING_MODE,
+                                  caller_callback,
+                                  caller_context);
 }

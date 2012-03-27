@@ -27,6 +27,8 @@
 #include "qmimsg.h"
 #include "util.h"
 
+static const int qmidev_log_unhandled_messages = 0;
+
 struct qmidev {
   void *priv;
 
@@ -62,7 +64,7 @@ struct callback {
   void *context;
 };
 
-static void call_listeners(struct qmidev *qmidev, struct qmimsg *message);
+static int call_listeners(struct qmidev *qmidev, struct qmimsg *message);
 static void call_callbacks(struct qmidev *qmidev);
 
 static struct qmidev *qmidev_new(void)
@@ -441,6 +443,42 @@ int qmidev_send_request(struct qmidev *qmidev,
   return 0;
 }
 
+struct void_context {
+  qmidev_response_fn caller_callback;
+  void *caller_context;
+};
+
+static void void_callback(struct qmidev *qmidev,
+                          void *data,
+                          int result,
+                          struct qmimsg *message)
+{
+  struct void_context *context = data;
+
+  assert(qmidev);
+  assert(data);
+
+  /* unused */
+  message = message;
+
+  context->caller_callback(qmidev, context->caller_context, result);
+  g_slice_free(struct void_context, context);
+}
+
+int qmidev_send_void_request(struct qmidev *qmidev,
+                             struct qmimsg *req_msg,
+                             uint16_t resp_msg_id,
+                             qmidev_response_fn caller_callback,
+                             void *caller_context)
+{
+  struct void_context *context = g_slice_new(struct void_context);
+  context->caller_callback = caller_callback;
+  context->caller_context = caller_context;
+
+  return qmidev_send_request(qmidev, req_msg, resp_msg_id,
+                             &void_callback, context);
+}
+
 static int dev_read_fn(void *ctx, void *buf, size_t len)
 {
   assert(ctx);
@@ -461,7 +499,8 @@ static void dev_read_cb(struct polled *polled)
   /* TODO: Do something. */
   if (result)
     return;
-  call_listeners(qmidev, msg);
+  if (call_listeners(qmidev, msg) && qmidev_log_unhandled_messages)
+    qmimsg_print(msg);
   qmimsg_free(msg);
 }
 
@@ -595,6 +634,7 @@ struct call_listener_context {
   uint8_t service;
   uint8_t client;
   uint16_t transaction;
+  int calls;
 };
 
 static void call_listener(void *data, void *user_data)
@@ -617,18 +657,22 @@ static void call_listener(void *data, void *user_data)
                                   listener->context,
                                   context->message);
   if (result) {
-    /* The glib documentation does not note this, but it is in safe to call
-       g_list_remove while called back from g_list_foreach. */
+    /* The glib documentation does not note this, but it is in fact safe to
+       call g_list_remove while called back from g_list_foreach. */
     qmidev_cancel_listen(context->qmidev, listener);
   }
+
+  context->calls++;
 }
 
-static void call_listeners(struct qmidev *qmidev, struct qmimsg *message)
+static int call_listeners(struct qmidev *qmidev, struct qmimsg *message)
 {
   struct call_listener_context context;
   context.qmidev = qmidev;
   context.message = message;
   qmimsg_get_header(message,
                     &context.service, &context.client, &context.transaction);
+  context.calls = 0;
   g_list_foreach(qmidev->listeners, &call_listener, &context);
+  return context.calls == 0;
 }

@@ -13,6 +13,8 @@
 #ifndef LIBQMI_QMIDEV_H
 #define LIBQMI_QMIDEV_H
 
+#include <libqmi.h>
+
 #include <stddef.h>
 #include <stdint.h>
 
@@ -89,6 +91,12 @@ int qmidev_send_request(struct qmidev *qmidev,
                         uint16_t resp_msg_id,
                         qmidev_request_fn callback,
                         void *context);
+
+int qmidev_send_void_request(struct qmidev *qmidev,
+                             struct qmimsg *req_msg,
+                             uint16_t resp_msg_id,
+                             qmidev_response_fn caller_callback,
+                             void *caller_context);
 
 /**
  * Sends a QMI message.
