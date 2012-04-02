@@ -22,13 +22,185 @@ struct qmidev;
 struct qmimsg;
 struct callback;
 
-struct listener;
+struct client;
 
-struct listen_criteria {
-  uint8_t service;
-  uint8_t client;
-  uint16_t transaction;
+typedef void (*client_create_fn)(struct qmidev *qmidev,
+                                 struct client *client);
+
+typedef void (*client_destroy_fn)(struct qmidev *qmidev,
+                                  struct client *client);
+
+typedef int (*request_fn)(void *context,
+                          struct qmimsg *message);
+
+typedef void (*response_fn)(struct qmidev *qmidev,
+                            void *context,
+                            int status,
+                            struct qmimsg *message);
+
+typedef void (*event_fn)(struct qmidev *qmidev,
+                         void *user_callback,
+                         void *user_context,
+                         uint16_t length,
+                         void *value);
+
+struct event {
+  uint8_t type;
+  struct listener *listener;
+  event_fn callback;
+  void *user_callback;
+  void *user_context;
 };
+
+struct service {
+  uint8_t service_id;
+  uint16_t event_msg_id;
+
+  client_create_fn create_fn;
+  client_destroy_fn destroy_fn;
+};
+
+#define INIT_SERVICE(id, event_msg_id) { (id), (event_msg_id), NULL, NULL }
+
+void *client_priv(struct client *client);
+
+void client_set_priv(struct client *client, void *priv);
+
+/**
+ * Fills in a struct event.
+ *
+ * @event: the struct event to fill in
+ * @type: the type of the TLV element representing the event
+ * @callback: the callback used to call the user's callback when the event
+ *            happens
+ */
+void event_init(struct event *event, uint8_t type, event_fn callback);
+
+/** Callback type for qmidev_get_client */
+typedef void (*qmidev_client_fn)(struct qmidev *qmidev,
+                                 void *context,
+                                 int status,
+                                 struct client *client);
+
+/**
+ * Allocates a client for a particular service on the card.
+ */
+int qmidev_get_client(struct qmidev *qmidev,
+                      struct service *service,
+                      qmidev_client_fn callback,
+                      void *context);
+
+
+/**
+ * Releases an allocated client.
+ */
+int qmidev_release_client(struct qmidev *qmidev,
+                          struct client *client,
+                          qmidev_response_fn callback,
+                          void *context);
+
+/**
+ * Returns the default client for a given service.
+ */
+struct client *qmidev_default_client(struct qmidev *qmidev,
+                                     struct service *service);
+
+/*
+ * General request structure:
+ *
+ * Most requests will have four declarations:
+ *
+ * 1. a context struct to be passed to the response handler.  This stores the
+ *    callback and context passed to the main request function, so the
+ *    response handler can call the callback after extracting any returned
+ *    data from the response message.
+ *
+ * 2. (optional) a make_request function.  If the request requires any TLVs to
+ *    be included in the request message, this function takes a QMI message
+ *    and a context pointer and adds the data to the message.  (This is a
+ *    separate function because it makes things neater for requests that don't
+ *    have any parameter -- a NULL make_request function simply isn't called.)
+ *
+ * 3. a handle_response function.  This is called when a response to the
+ *    request is received, and is responsible for getting any returned data
+ *    from the response message, calling the original callback, and freeing
+ *    the context.
+ *
+ * 4. the main request function.  This allocates a context and calls
+ *    qmidev_request with pointers to the request and response functions and
+ *    associated contexts.
+ */
+
+/**
+ * Makes a request on a particular client (as opposed to the default one) of a
+ * service.
+ *
+ * @qmidev: the QMI device
+ * @client: the client on which to make the request
+ * @msg_id: the message ID of the request and response messages
+ * @make_request_fn: a function to be called to fill in the request message,
+ *                   if it requires a payload (otherwise NULL).  Will be
+ *                   called before qmidev_client_request returns.
+ * @request_context: the context for make_request_fn
+ * @handle_response_fn: the function to call when the response is received
+ * @response_context: the context for handle_response_fn
+ */
+int qmidev_client_request(struct qmidev *qmidev,
+                          struct client *client,
+                          uint16_t msg_id,
+                          request_fn make_request_fn,
+                          void *request_context,
+                          response_fn handle_response_fn,
+                          void *response_context);
+
+/**
+ * Makes a request on the default client of a service.
+ *
+ * Arguments are otherwise the same as qmidev_client_request.
+ */
+int qmidev_request(struct qmidev *qmidev,
+                   struct service *service,
+                   uint16_t msg_id,
+                   request_fn make_request_fn,
+                   void *request_context,
+                   response_fn handle_response_fn,
+                   void *response_context);
+
+/**
+ * Makes a void request on the default client of a service.
+ *
+ * Immediately calls the response function without doing anything with the
+ * response message besides getting the result code.
+ *
+ * Arguments are otherwise the same as qmidev_request.
+ */
+int qmidev_void_request(struct qmidev *qmidev,
+                        struct service *service,
+                        uint16_t msg_id,
+                        request_fn make_request_fn,
+                        void *request_context,
+                        qmidev_response_fn handle_response_fn,
+                        void *response_context);
+
+/**
+ * Sets or clears a callback.
+ *
+ * @qmidev: the QMI device
+ * @client: the client on which to set/clear the callback
+ * @event: the event structure representing the event whose callback we are
+ *         setting or clearing
+ * @new_callback: the new callback to set, or NULL if clearing
+ * @new_context: the context for new_callback
+ * @caller_callback: the callback to call once new_callback is set
+ * @caller_context: the context for caller_callback
+ */
+int qmidev_set_callback(struct qmidev *qmidev,
+                        struct client *client,
+                        struct event *event,
+                        void *new_callback,
+                        void *new_context,
+                        qmidev_response_fn caller_callback,
+                        void *caller_context);
 
 /* TODO: These should be replaced by qmidev_poll. */
 
@@ -62,88 +234,10 @@ typedef void (*qmidev_request_fn)(struct qmidev *qmidev,
                                   struct qmimsg *resp_msg);
 
 /**
- * Creates a new QMI message for a request.
- *
- * The service and message ID fields of the message will be filled from the
- * respective parameters.  The client ID is set to the client ID allocated
- * by the qmidev for this service, and the transaction ID is assigned
- * sequentially within that client.
- *
- * @service: The service to which the request will be sent
- * @req_msg_id: The message ID of the request
- */
-int qmidev_make_request(struct qmidev *qmidev,
-                        uint8_t service_id,
-                        uint16_t req_msg_id,
-                        struct qmimsg **message_out);
-
-/**
- * Sends a request message created with qmidev_make_request, and listens for
- * a reply.
- *
- * @req_msg: The message returned from qmidev_make_request
- * @resp_msg_id: The expected message ID of the response
- * @callback: The callback to call when a response is received
- * @context: The context with which to call the callback
- */
-int qmidev_send_request(struct qmidev *qmidev,
-                        struct qmimsg *req_msg,
-                        uint16_t resp_msg_id,
-                        qmidev_request_fn callback,
-                        void *context);
-
-int qmidev_send_void_request(struct qmidev *qmidev,
-                             struct qmimsg *req_msg,
-                             uint16_t resp_msg_id,
-                             qmidev_response_fn caller_callback,
-                             void *caller_context);
-
-/**
  * Sends a QMI message.
  * Returns zero on success, errno on failure.
  */
 int qmidev_send(struct qmidev *qmidev, struct qmimsg *msg);
-
-/**
- * Callback type for qmidev_listen.
- *
- * Will be called when a message matching the listen criteria is received.
- *
- * @qmidev: the QMI device on which a message was received
- * @context: the context passed to qmidev_listen
- * @message: the message received
- *
- * The callback should return zero to continue listening for such messages,
- * or non-zero to remove the listener.
- */
-typedef int (*qmidev_listen_callback_fn)(struct qmidev *qmidev,
-                                         void *context,
-                                         struct qmimsg *message);
-
-/**
- * Starts listening for QMI messages matching certain criteria.
- *
- * @qmidev: the QMI device
- * @criteria: the listen criteria (see struct listen_criteria)
- * @callback: the callback to call when a matching message is received
- * @context: the context with which to call the callback
- *
- * Returns a pointer to a struct listener that can be passed to
- * qmidev_cancel_listen to stop listening.
- */
-
-struct listener *qmidev_listen(struct qmidev *qmidev,
-                               struct listen_criteria *criteria,
-                               qmidev_listen_callback_fn callback,
-                               void *context);
-
-/**
- * Stops listening for QMI messages matching certain criteria.
- *
- * @qmidev: the QMI device
- * @listener: the listener returned by qmidev_listen
- */
-void qmidev_cancel_listen(struct qmidev *qmidev, struct listener *listener);
 
 typedef void (*callback_fn)(struct qmidev *qmidev, void *context);
 

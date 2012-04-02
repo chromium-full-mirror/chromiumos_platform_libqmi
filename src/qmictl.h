@@ -17,6 +17,10 @@
 
 #include <libqmi.h>
 
+#include "qmidev.h"
+
+struct service qmictl_service;
+
 /**
  * Callback type for qmictl_get_cid.
  *

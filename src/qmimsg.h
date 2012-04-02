@@ -61,8 +61,11 @@ void qmimsg_print(struct qmimsg *message);
  * Retrieves a tasteful subset of the header fields in a QMI message.
  */
 void qmimsg_get_header(struct qmimsg *message,
-                       uint8_t *service_out, uint8_t *client_out,
-                       uint16_t *transaction_out);
+                       uint8_t *service_out,
+                       uint8_t *client_out,
+                       uint8_t *qmi_flags_out,
+                       uint16_t *transaction_out,
+                       uint16_t *message_out);
 
 /**
  * Finds a TLV element with the given type in the payload of the given QMI
@@ -88,6 +91,14 @@ int qmimsg_tlv_get(struct qmimsg *message,
  */
 int qmimsg_tlv_get_varlen(struct qmimsg *message,
                           uint8_t type, uint16_t *length, void *value);
+
+typedef void (*qmimsg_tlv_foreach_fn)(void *context,
+                                      uint8_t type,
+                                      uint16_t length,
+                                      void *value);
+
+void qmimsg_tlv_foreach(struct qmimsg *message,
+                        qmimsg_tlv_foreach_fn func, void *context);
 
 /**
  * Appends a TLV element with the given type, length, and value to the payload
