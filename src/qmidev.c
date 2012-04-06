@@ -28,6 +28,7 @@
 #include "qmidev.h"
 #include "qmidms.h"
 #include "qmimsg.h"
+#include "qmiwds.h"
 #include "util.h"
 
 static const int qmidev_log_unhandled_messages = 0;
@@ -47,48 +48,27 @@ struct qmidev {
   int connected;
 };
 
-enum {
-  MATCH_SERVICE     = 0x01,
-  MATCH_CLIENT      = 0x02,
-  MATCH_QMI_FLAGS   = 0x04,
-  MATCH_TRANSACTION = 0x08,
-  MATCH_MESSAGE     = 0x10
-};
-
-/**
- * Callback type for qmidev_listen.
- *
- * Will be called when a message matching the listen criteria is received.
- *
- * @qmidev: the QMI device on which a message was received
- * @context: the context passed to qmidev_listen
- * @message: the message received
- *
- * The callback should return zero to continue listening for such messages,
- * or non-zero to remove the listener.
- */
-typedef int (*qmidev_listen_callback_fn)(struct qmidev *qmidev,
-                                         void *context,
-                                         struct qmimsg *message);
-
-struct listen_criteria {
-  int flags;
-  uint8_t service;
-  uint8_t client;
-  uint8_t qmi_flags;
-  uint16_t transaction;
-  uint16_t message;
+struct callback {
+  callback_fn func;
+  void *context;
 };
 
 struct listener {
+  struct client *client;
   struct listen_criteria criteria;
   qmidev_listen_callback_fn callback;
   void *context;
 };
 
-struct callback {
-  callback_fn func;
-  void *context;
+struct client {
+  struct service *service;
+
+  uint8_t client_id;
+  uint16_t next_transaction_id;
+  struct listener *event_listener;
+  GList *events;
+
+  void *priv;
 };
 
 static int service_is_control(struct service *service)
@@ -171,6 +151,7 @@ int qmidev_process(struct qmidev *qmidev)
 }
 
 struct listener *qmidev_listen(struct qmidev *qmidev,
+                               struct client *client,
                                struct listen_criteria *criteria,
                                qmidev_listen_callback_fn callback,
                                void *context)
@@ -181,6 +162,7 @@ struct listener *qmidev_listen(struct qmidev *qmidev,
 
   struct listener *listener = g_slice_new(struct listener);
 
+  listener->client = client;
   listener->criteria = *criteria;
   listener->callback = callback;
   listener->context = context;
@@ -217,23 +199,22 @@ static void call_listener(void *data, void *user_data)
   struct listen_criteria *crit = &listener->criteria;
   int flags = crit->flags;
 
-  if ((flags & MATCH_SERVICE) &&
-      (crit->service != context->msg_service))
+  if (listener->client->service->service_id != context->msg_service)
     return;
 
-  if ((flags & MATCH_CLIENT) &&
-      (crit->client != context->msg_client))
+  if ((context->msg_client != QMI_CID_BROADCAST) &&
+      (listener->client->client_id != context->msg_client))
     return;
 
-  if ((flags & MATCH_QMI_FLAGS) &&
+  if ((flags & LISTEN_MATCH_QMI_FLAGS) &&
       (crit->qmi_flags != context->msg_qmi_flags))
     return;
 
-  if ((flags & MATCH_TRANSACTION) &&
+  if ((flags & LISTEN_MATCH_TRANSACTION) &&
       (crit->transaction != context->msg_transaction))
     return;
 
-  if ((flags & MATCH_MESSAGE) &&
+  if ((flags & LISTEN_MATCH_MESSAGE) &&
       (crit->message != context->msg_message))
     return;
 
@@ -266,17 +247,6 @@ static int call_listeners(struct qmidev *qmidev, struct qmimsg *message)
 }
 
 
-
-struct client {
-  struct service *service;
-
-  uint8_t client_id;
-  uint16_t next_transaction_id;
-  struct listener *event_listener;
-  GList *events;
-
-  void *priv;
-};
 
 static struct client *make_ctl_client(struct qmidev *qmidev)
 {
@@ -380,16 +350,15 @@ static void got_cid(struct qmidev *qmidev,
   if (client->service->create_fn)
     client->service->create_fn(qmidev, client);
 
-  event_criteria.flags = MATCH_SERVICE | MATCH_CLIENT | MATCH_QMI_FLAGS |
-                         MATCH_MESSAGE;
-  event_criteria.service = client->service->service_id;
-  event_criteria.client = client->client_id;
+  event_criteria.flags = LISTEN_MATCH_QMI_FLAGS |
+                         LISTEN_MATCH_MESSAGE;
   if (service_is_control(client->service))
     event_criteria.qmi_flags = QMI_FLAG_CTL_INDICATION;
   else
     event_criteria.qmi_flags = QMI_FLAG_SVC_INDICATION;
   event_criteria.message = client->service->event_msg_id;
-  client->event_listener = qmidev_listen(qmidev,
+
+  client->event_listener = qmidev_listen(qmidev, client,
                                          &event_criteria,
                                          &event_message_received,
                                          client);
@@ -586,10 +555,9 @@ int qmidev_client_request(struct qmidev *qmidev,
       goto fail;
   }
 
-  response_criteria.flags = MATCH_SERVICE | MATCH_CLIENT | MATCH_TRANSACTION |
-                            MATCH_QMI_FLAGS | MATCH_MESSAGE;
-  response_criteria.service = client->service->service_id;
-  response_criteria.client = client->client_id;
+  response_criteria.flags = LISTEN_MATCH_TRANSACTION |
+                            LISTEN_MATCH_QMI_FLAGS |
+                            LISTEN_MATCH_MESSAGE;
   if (service_is_control(client->service))
     response_criteria.qmi_flags = QMI_FLAG_CTL_RESPONSE;
   else
@@ -598,7 +566,7 @@ int qmidev_client_request(struct qmidev *qmidev,
   response_criteria.message = msg_id;
 
   transaction->response_listener =
-          qmidev_listen(qmidev,
+          qmidev_listen(qmidev, client,
                         &response_criteria,
                         &response_received,
                         transaction);
@@ -851,6 +819,7 @@ int qmidev_connect(struct qmidev *qmidev,
   context->pending_services = g_queue_new();
 
   g_queue_push_tail(context->pending_services, &qmidms_service);
+  g_queue_push_tail(context->pending_services, &qmiwds_service);
 
   connect_next_service(qmidev, context);
 
@@ -1049,33 +1018,3 @@ static void call_callbacks(struct qmidev *qmidev)
   g_list_free(qmidev->callbacks);
   qmidev->callbacks = NULL;
 }
-
-
-
-
-/**
- * Starts listening for QMI messages matching certain criteria.
- *
- * @qmidev: the QMI device
- * @criteria: the listen criteria (see struct listen_criteria)
- * @callback: the callback to call when a matching message is received
- * @context: the context with which to call the callback
- *
- * Returns a pointer to a struct listener that can be passed to
- * qmidev_cancel_listen to stop listening.
- */
-
-struct listener *qmidev_listen(struct qmidev *qmidev,
-                               struct listen_criteria *criteria,
-                               qmidev_listen_callback_fn callback,
-                               void *context);
-
-/**
- * Stops listening for QMI messages matching certain criteria.
- *
- * @qmidev: the QMI device
- * @listener: the listener returned by qmidev_listen
- */
-void qmidev_cancel_listen(struct qmidev *qmidev, struct listener *listener);
-
-

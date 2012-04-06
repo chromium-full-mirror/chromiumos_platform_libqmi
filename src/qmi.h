@@ -96,6 +96,12 @@ enum {
   QMIDMS_EVENT_WIRELESS_DISABLE_STATE
 };
 
+enum {
+  QMIWDS_MSG_EVENT         = 0x0001,
+  QMIWDS_MSG_START_NETWORK = 0x0020,
+  QMIWDS_MSG_STOP_NETWORK  = 0x0021,
+  QMIWDS_MSG_PACKET_STATUS = 0x0022
+};
 
 /**
  * Gets the result from a TLV message.

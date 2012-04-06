@@ -233,6 +233,43 @@ typedef void (*qmidev_request_fn)(struct qmidev *qmidev,
                                   int status,
                                   struct qmimsg *resp_msg);
 
+enum {
+  LISTEN_MATCH_QMI_FLAGS   = 0x1,
+  LISTEN_MATCH_TRANSACTION = 0x2,
+  LISTEN_MATCH_MESSAGE     = 0x4
+};
+
+struct listen_criteria {
+  int flags;
+  uint8_t qmi_flags;
+  uint16_t transaction;
+  uint16_t message;
+};
+
+/**
+ * Callback type for qmidev_listen.
+ *
+ * Will be called when a message matching the listen criteria is received.
+ *
+ * @qmidev: the QMI device on which a message was received
+ * @context: the context passed to qmidev_listen
+ * @message: the message received
+ *
+ * The callback should return zero to continue listening for such messages,
+ * or non-zero to remove the listener.
+ */
+typedef int (*qmidev_listen_callback_fn)(struct qmidev *qmidev,
+                                         void *context,
+                                         struct qmimsg *message);
+
+struct listener *qmidev_listen(struct qmidev *qmidev,
+                               struct client *client,
+                               struct listen_criteria *criteria,
+                               qmidev_listen_callback_fn callback,
+                               void *context);
+
+void qmidev_cancel_listen(struct qmidev *qmidev, struct listener *listener);
+
 /**
  * Sends a QMI message.
  * Returns zero on success, errno on failure.
