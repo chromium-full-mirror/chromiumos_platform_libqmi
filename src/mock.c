@@ -28,8 +28,10 @@ struct mock_priv {
 
 static int mock_open(struct dev *dev)
 {
+  struct mock_priv *priv;
+
   assert(dev);
-  struct mock_priv *priv = dev_priv(dev);
+  priv = dev_priv(dev);
   assert(priv);
 
   priv->is_open = 1;
@@ -39,9 +41,11 @@ static int mock_open(struct dev *dev)
 
 static int mock_read(struct dev *dev, void *buf, size_t len)
 {
+  struct mock_priv *priv;
+
   assert(dev);
   assert(buf);
-  struct mock_priv *priv = dev_priv(dev);
+  priv = dev_priv(dev);
   assert(priv);
 
   /* TODO: Actually read. */
@@ -52,9 +56,11 @@ static int mock_read(struct dev *dev, void *buf, size_t len)
 
 static int mock_write(struct dev *dev, const void *buf, size_t len)
 {
+  struct mock_priv *priv;
+
   assert(dev);
   assert(buf);
-  struct mock_priv *priv = dev_priv(dev);
+  priv = dev_priv(dev);
   assert(priv);
   assert(priv->is_open);
 
@@ -66,8 +72,10 @@ static int mock_write(struct dev *dev, const void *buf, size_t len)
 
 static int mock_close(struct dev *dev)
 {
+  struct mock_priv *priv;
+
   assert(dev);
-  struct mock_priv *priv = dev_priv(dev);
+  priv = dev_priv(dev);
   assert(priv);
   assert(priv->is_open);
 
@@ -78,8 +86,10 @@ static int mock_close(struct dev *dev)
 
 static void mock_destroy(struct dev *dev)
 {
+  struct mock_priv *priv;
+
   assert(dev);
-  struct mock_priv *priv = dev_priv(dev);
+  priv = dev_priv(dev);
   g_slice_free(struct mock_priv, priv);
 }
 
@@ -93,9 +103,10 @@ struct dev_ops mock_ops = {
 
 struct dev *mock_new(void)
 {
+  struct mock_priv *priv;
   int result;
 
-  struct mock_priv *priv = g_slice_new(struct mock_priv);
+  priv = g_slice_new(struct mock_priv);
   result = pipe(&priv->fds[0]);
   if (result < 0) {
     g_slice_free(struct mock_priv, priv);
@@ -106,6 +117,5 @@ struct dev *mock_new(void)
     g_slice_free(struct mock_priv, priv);
     return NULL;
   }
-  struct dev *dev = dev_new(&mock_ops, priv);
-  return dev;
+  return dev_new(&mock_ops, priv);
 }

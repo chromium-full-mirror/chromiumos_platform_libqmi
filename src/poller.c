@@ -32,10 +32,13 @@ struct polled {
 
 struct poller *poller_new(void)
 {
-  int epoll_fd = epoll_create1(0);
+  struct poller *poller;
+  int epoll_fd;
+
+  epoll_fd = epoll_create1(0);
   if (epoll_fd < 0)
     return NULL;
-  struct poller *poller = g_slice_new(struct poller);
+  poller = g_slice_new(struct poller);
   poller->epoll_fd = epoll_fd;
   poller->num_polled = 0;
   return poller;
@@ -57,11 +60,12 @@ int poller_fd(struct poller *poller)
 
 struct polled *poller_add(struct poller *poller, int fd)
 {
-  assert(poller);
-
-  struct polled *polled = g_slice_new(struct polled);
+  struct polled *polled;
   struct epoll_event event;
 
+  assert(poller);
+
+  polled = g_slice_new(struct polled);
   polled->poller = poller;
   polled->fd = fd;
   polled->priv = NULL;
@@ -84,11 +88,12 @@ struct polled *poller_add(struct poller *poller, int fd)
 
 static int poller_update(struct poller *poller, struct polled *polled)
 {
+  struct epoll_event event;
+
   assert(poller);
   assert(polled);
   assert(polled->poller == poller);
 
-  struct epoll_event event;
   event.events = 0;
   event.data.ptr = polled;
 
@@ -104,11 +109,13 @@ static int poller_update(struct poller *poller, struct polled *polled)
 
 static int poller_remove(struct poller *poller, struct polled *polled)
 {
+  int result;
+
   assert(poller);
   assert(polled);
   assert(polled->poller == poller);
 
-  int result = epoll_ctl(poller->epoll_fd, EPOLL_CTL_DEL, polled->fd, NULL);
+  result = epoll_ctl(poller->epoll_fd, EPOLL_CTL_DEL, polled->fd, NULL);
   if (result)
     return result;
 

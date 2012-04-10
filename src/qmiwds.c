@@ -57,16 +57,15 @@ static int packet_status_changed(struct qmidev *qmidev,
 
 static void client_create(struct qmidev *qmidev, struct client *client)
 {
+  struct qmiwds_priv *priv;
   struct listen_criteria criteria;
-
-  qmidev = qmidev;
-  struct qmiwds_priv *priv = g_slice_new(struct qmiwds_priv);
 
   criteria.flags = LISTEN_MATCH_QMI_FLAGS |
                    LISTEN_MATCH_MESSAGE;
   criteria.qmi_flags = QMI_FLAG_SVC_INDICATION;
   criteria.message = QMIWDS_MSG_PACKET_STATUS;
 
+  priv = g_slice_new(struct qmiwds_priv);
   priv->packet_status_listener = qmidev_listen(qmidev,
                                                client,
                                                &criteria,
@@ -76,13 +75,18 @@ static void client_create(struct qmidev *qmidev, struct client *client)
   priv->packet_status_callback = NULL;
   priv->packet_status_context = NULL;
   client_set_priv(client, priv);
+
+  /* unused */
+  qmidev = qmidev;
 }
 
 static void client_destroy(struct qmidev *qmidev, struct client *client)
 {
-  qmidev = qmidev;
   struct qmiwds_priv *priv = client_priv(client);
   g_slice_free(struct qmiwds_priv, priv);
+
+  /* unused */
+  qmidev = qmidev;
 }
 
 struct service qmiwds_service = {
@@ -145,8 +149,11 @@ int qmidev_set_packet_status_callback(
     qmidev_response_fn set_callback,
     void *set_context)
 {
-  struct client *client = qmidev_default_client(qmidev, &qmiwds_service);
-  struct qmiwds_priv *priv = client_priv(client);
+  struct client *client;
+  struct qmiwds_priv *priv;
+
+  client = qmidev_default_client(qmidev, &qmiwds_service);
+  priv = client_priv(client);
   priv->packet_status_callback = callback;
   priv->packet_status_context = context;
   /* TODO: Call later. */

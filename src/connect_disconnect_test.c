@@ -24,8 +24,10 @@ static void disconnected(struct qmidev *qmidev, void *data, int status)
 
 static void connected(struct qmidev *qmidev, void *data, int status)
 {
+  int result;
+
   assert(status == 0);
-  int result = qmidev_disconnect(qmidev, &disconnected, data);
+  result = qmidev_disconnect(qmidev, &disconnected, data);
   assert(result == 0);
 }
 

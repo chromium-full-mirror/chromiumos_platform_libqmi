@@ -19,14 +19,18 @@ static void set_power(struct qmidev *qmidev, void *data, int status)
 {
   assert(status == 0);
   printf("set_power: status = %d\n", status);
+
+  /* unused */
   qmidev = qmidev;
   data = data;
 }
 
 static void set_next_state(struct qmidev *qmidev, struct context *context)
 {
+  int result;
+
   qmidev_power_state next_state = 1 - context->last_state;
-  int result = qmidev_set_power(qmidev, next_state, &set_power, context);
+  result = qmidev_set_power(qmidev, next_state, &set_power, context);
   assert(result == 0);
 }
 
@@ -54,29 +58,34 @@ static void got_power(struct qmidev *qmidev, void *data, int status,
 
 static void set_power_callback(struct qmidev *qmidev, void *data, int status)
 {
+  int result;
+
   assert(status == 0);
   printf("set_power_callback: status %d\n", status);
-  int result = qmidev_get_power(qmidev, &got_power, data);
+  result = qmidev_get_power(qmidev, &got_power, data);
   assert(result == 0);
 }
 
 static void connected(struct qmidev *qmidev, void *data, int status)
 {
+  int result;
+
   assert(status == 0);
-  int result = qmidev_set_power_callback(qmidev,
-                                         &power_callback, data,
-                                         &set_power_callback, data);
+  result = qmidev_set_power_callback(qmidev,
+                                     &power_callback, data,
+                                     &set_power_callback, data);
   assert(result == 0);
 }
 
 int main(void)
 {
+  struct qmidev *qmidev;
   struct context context;
   int result;
 
   context.done = 0;
 
-  struct qmidev *qmidev = qmidev_new_file("/dev/cdc-wdm0");
+  qmidev = qmidev_new_file("/dev/cdc-wdm0");
   assert(qmidev);
 
   result = qmidev_connect(qmidev, &connected, &context);

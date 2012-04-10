@@ -50,19 +50,23 @@ static void operating_mode_changed(struct qmidev *qmidev,
 
 static void client_create(struct qmidev *qmidev, struct client *client)
 {
-  qmidev = qmidev;
   struct qmidms_priv *priv = g_slice_new(struct qmidms_priv);
   event_init(&priv->operating_mode,
              QMIDMS_EVENT_OPERATING_MODE,
              &operating_mode_changed);
   client_set_priv(client, priv);
+
+  /* unused */
+  qmidev = qmidev;
 }
 
 static void client_destroy(struct qmidev *qmidev, struct client *client)
 {
-  qmidev = qmidev;
   struct qmidms_priv *priv = client_priv(client);
   g_slice_free(struct qmidms_priv, priv);
+
+  /* unused */
+  qmidev = qmidev;
 }
 
 struct service qmidms_service = {

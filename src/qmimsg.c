@@ -184,6 +184,10 @@ static struct tlv *qmi_tlv_next(struct qmimsg *m, struct tlv *tlv)
  */
 static int qmi_check(struct qmimsg *m)
 {
+  size_t header_length;
+  char *end;
+  struct tlv *tlv;
+
   assert(m);
   assert(m->buf);
 
@@ -206,7 +210,6 @@ static int qmi_check(struct qmimsg *m)
     return 0;
   }
 
-  size_t header_length;
   if (qmi_is_control(m))
     header_length = sizeof(struct qmux) + sizeof(struct control_header);
   else
@@ -218,12 +221,12 @@ static int qmi_check(struct qmimsg *m)
   }
 
   if (qmux_length(m) - header_length != qmi_tlv_length(m)) {
-    fprintf(stderr, "qmi_check: QMUX length and QMI TLV lengths don't match\n");
+    fprintf(stderr,
+            "qmi_check: QMUX length and QMI TLV lengths don't match\n");
     return 0;
   }
 
-  char *end = qmi_end(m);
-  struct tlv *tlv;
+  end = qmi_end(m);
   for (tlv = qmi_tlv(m); tlv < (struct tlv *)end; tlv = tlv_next(tlv)) {
     if (tlv->value > end) {
       fprintf(stderr, "qmi_check: TLV header runs over buffer\n");
@@ -247,9 +250,11 @@ int qmimsg_new(uint8_t qmux_flags, uint8_t service, uint8_t client,
                uint8_t qmi_flags, uint16_t transaction, uint16_t message,
                struct qmimsg **message_out)
 {
+  struct qmimsg *m;
+
   assert(service || (transaction <= UINT8_MAX));
 
-  struct qmimsg *m = g_slice_new(struct qmimsg);
+  m = g_slice_new(struct qmimsg);
 
   if (!service)
     m->len = 1 + sizeof(struct qmux) + sizeof(struct control_header);
@@ -354,6 +359,8 @@ void qmimsg_get_header(struct qmimsg *message,
 
 void qmimsg_print(struct qmimsg *m)
 {
+  struct tlv *tlv;
+
   assert(m);
 
   fprintf(stderr,
@@ -371,7 +378,6 @@ void qmimsg_print(struct qmimsg *m)
           qmi_message(m),
           qmi_tlv_length(m));
 
-  struct tlv *tlv;
   for (tlv = qmi_tlv_first(m); tlv; tlv = qmi_tlv_next(m, tlv)) {
     fprintf(stderr, "TLV:  type=0x%02x length=0x%04x\n",
             tlv->type, tlv->length);
@@ -392,11 +398,12 @@ static int qmimsg_tlv_get_internal(struct qmimsg *message,
                                    void *value,
                                    int length_exact)
 {
+  struct tlv *tlv;
+
   assert(message);
   assert(message->buf);
   assert(length);
 
-  struct tlv *tlv;
   for (tlv = qmi_tlv_first(message); tlv; tlv = qmi_tlv_next(message, tlv)) {
     if (tlv->type == type) {
       if (length_exact && (tlv->length != *length)) {
@@ -431,10 +438,11 @@ int qmimsg_tlv_get_varlen(struct qmimsg *message,
 void qmimsg_tlv_foreach(struct qmimsg *message,
                         qmimsg_tlv_foreach_fn func, void *context)
 {
+  struct tlv *tlv;
+
   assert(message);
   assert(func);
 
-  struct tlv *tlv;
   for (tlv = qmi_tlv_first(message); tlv; tlv = qmi_tlv_next(message, tlv)) {
     func(context, tlv->type, tlv->length, tlv->value);
   }
@@ -444,6 +452,9 @@ void qmimsg_tlv_foreach(struct qmimsg *message,
 int qmimsg_tlv_add(struct qmimsg *m,
                    uint8_t type, uint16_t length, const void *value)
 {
+  struct tlv *tlv;
+  size_t tlv_len;
+
   assert(m);
   assert((length == 0) || value);
 
@@ -451,7 +462,7 @@ int qmimsg_tlv_add(struct qmimsg *m,
   assert(qmi_check(m));
 
   /* Find length of new TLV. */
-  size_t tlv_len = sizeof(struct tlv) + length;
+  tlv_len = sizeof(struct tlv) + length;
 
   /* Check for overflow of message size. */
   if (qmux_length(m) + tlv_len > UINT16_MAX) {
@@ -463,7 +474,7 @@ int qmimsg_tlv_add(struct qmimsg *m,
   m->buf = g_realloc(m->buf, m->len);
 
   /* Fill in new TLV. */
-  struct tlv *tlv = (struct tlv *)(qmi_end(m) - tlv_len);
+  tlv = (struct tlv *)(qmi_end(m) - tlv_len);
   tlv->type = type;
   tlv->length = length;
   if (value)

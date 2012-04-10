@@ -29,12 +29,13 @@ enum {
 
 int qmi_result(struct qmimsg *message)
 {
+  struct qmi_result msg_result;
+  int result;
+
   assert(message);
 
-  struct qmi_result msg_result;
-
-  int result = qmimsg_tlv_get(message, QMI_TLV_RESULT_CODE,
-                              sizeof(msg_result), &msg_result);
+  result = qmimsg_tlv_get(message, QMI_TLV_RESULT_CODE,
+                          sizeof(msg_result), &msg_result);
   if (result)
     return QMI_ERR_MESSAGE_INVALID;
 
@@ -53,12 +54,12 @@ int qmi_tlv_strdup(struct qmimsg *message,
                    uint16_t *length_out,
                    char **value_out)
 {
-  assert(message);
-  assert(value_out);
-
   uint16_t length;
   char *value;
   int result;
+
+  assert(message);
+  assert(value_out);
 
   result = qmimsg_tlv_get_varlen(message, type, &length, NULL);
   if (result)
