@@ -1,4 +1,8 @@
 src/*.o
 src/libqmi.so
 src/*_unittest
+src/connect_disconnect_test
 src/get_cid_stress_test
+src/power_stress_test
+src/qmiinfo
+src/start_network_stress_test
