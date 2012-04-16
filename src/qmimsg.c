@@ -331,17 +331,25 @@ int qmimsg_write(struct qmimsg *m, qmimsg_write_fn write_fn, void *context)
   return 0;
 }
 
-void qmimsg_get_header(struct qmimsg *m,
-                       uint8_t *s_out, uint8_t *c_out, uint16_t *t_out)
+void qmimsg_get_header(struct qmimsg *message,
+                       uint8_t *service_out,
+                       uint8_t *client_out,
+                       uint8_t *qmi_flags_out,
+                       uint16_t *transaction_out,
+                       uint16_t *message_out)
 {
-  assert(m);
+  assert(message);
 
-  if (s_out)
-    *s_out = qmux_service(m);
-  if (c_out)
-    *c_out = qmux_client(m);
-  if (t_out)
-    *t_out = qmi_transaction(m);
+  if (service_out)
+    *service_out = qmux_service(message);
+  if (client_out)
+    *client_out = qmux_client(message);
+  if (qmi_flags_out)
+    *qmi_flags_out = qmi_flags(message);
+  if (transaction_out)
+    *transaction_out = qmi_transaction(message);
+  if (message_out)
+    *message_out = qmi_message(message);
 }
 
 void qmimsg_print(struct qmimsg *m)
@@ -418,6 +426,18 @@ int qmimsg_tlv_get_varlen(struct qmimsg *message,
                           uint8_t type, uint16_t *length, void *value)
 {
   return qmimsg_tlv_get_internal(message, type, length, value, 0);
+}
+
+void qmimsg_tlv_foreach(struct qmimsg *message,
+                        qmimsg_tlv_foreach_fn func, void *context)
+{
+  assert(message);
+  assert(func);
+
+  struct tlv *tlv;
+  for (tlv = qmi_tlv_first(message); tlv; tlv = qmi_tlv_next(message, tlv)) {
+    func(context, tlv->type, tlv->length, tlv->value);
+  }
 }
 
 
