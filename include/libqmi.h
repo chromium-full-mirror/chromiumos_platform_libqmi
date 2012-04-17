@@ -19,13 +19,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-typedef unsigned char byte;
-
-/*
- * Type of a QMI device.  May be created with qmidev_new_file and destroyed
- * with qmidev_destroy.
- */
-typedef struct qmidev qmidev;
+struct qmidev;
 
 /* GENERIC RESPONSE FUNCTIONS */
 
@@ -41,7 +35,7 @@ typedef struct qmidev qmidev;
  * returning a response, the status will be a QMIDEV_ERR_* constant.
  */
 typedef void (*qmidev_response_fn)(
-  qmidev *dev,
+  struct qmidev *qmidev,
   void *context,
   int status);
 
@@ -53,7 +47,7 @@ typedef void (*qmidev_response_fn)(
  * See qmidev_response_fn for more details.
  */
 typedef void (*qmidev_int_response_fn)(
-  qmidev *dev,
+  struct qmidev *qmidev,
   void *context,
   int status,
   int result);
@@ -68,13 +62,10 @@ typedef void (*qmidev_int_response_fn)(
  * See qmidev_response_fn for more details.
  */
 typedef void (*qmidev_string_response_fn)(
-  qmidev *dev,
+  struct qmidev *qmidev,
   void *context,
   int status,
   const char *result);
-
-/* TODO */
-int qmidev_init(void);
 
 /*
  * Creates a new QMI device backed by a file (to which the QMI messages will
@@ -83,21 +74,21 @@ int qmidev_init(void);
  *
  * Returns the allocated QMI device, or NULL if it could not be created.
  */
-qmidev *qmidev_new_file(const char *path);
+struct qmidev *qmidev_new_file(const char *path);
 
 /*
  * Sets the "private data" pointer for a QMI device.  This pointer is solely
  * for use by the caller, perhaps to tie the QMI device to an associated object
  * of its own.
  */
-void qmidev_set_priv(qmidev *dev, void *priv);
+void qmidev_set_priv(struct qmidev *qmidev, void *priv);
 
 /*
  * Returns the "private data" pointer for a QMI device.
  *
  * See qmidev_set_priv for more details.
  */
-void *qmidev_priv(qmidev *dev);
+void *qmidev_priv(struct qmidev *qmidev);
 
 /*
  * Returns the file descriptor upon which the caller should wait to determine
@@ -107,14 +98,14 @@ void *qmidev_priv(qmidev *dev);
  *
  * This function may be called any time after creating the QMI device.
  */
-int qmidev_fd(qmidev *dev);
+int qmidev_fd(struct qmidev *qmidev);
 
 /*
  * Processes activity on the QMI device.  This function should be called when
  * select or epoll reveals that there is activity on the file descriptor
  * returned by qmidev_fd.
  */
-int qmidev_process(qmidev *dev);
+int qmidev_process(struct qmidev *qmidev);
 
 /*
  * Connects to the device.  This may involve several method calls to initialize
@@ -122,7 +113,8 @@ int qmidev_process(qmidev *dev);
  * be called with the provided context when the library has finished connecting
  * to the device (or failed to connect).
  */
-int qmidev_connect(qmidev *dev, qmidev_response_fn callback, void *context);
+int qmidev_connect(struct qmidev *qmidev,
+                   qmidev_response_fn callback, void *context);
 
 /*
  * Disconnects from the device.  This may involve several method calls to tear
@@ -130,7 +122,8 @@ int qmidev_connect(qmidev *dev, qmidev_response_fn callback, void *context);
  * will be called with the provided context when the library has finished
  * disconnecting to the device (or failed to disconnect).
  */
-int qmidev_disconnect(qmidev *dev, qmidev_response_fn callback, void *context);
+int qmidev_disconnect(struct qmidev *qmidev,
+                      qmidev_response_fn callback, void *context);
 
 /* ENUMS */
 
@@ -297,7 +290,7 @@ typedef enum {
   QMIDEV_SESSION_CONNECTED,
   QMIDEV_SESSION_SUSPENDED,
   QMIDEV_SESSION_AUTHENTICATING
-} qmidev_session_state;
+} qmidev_packet_status;
 
 typedef enum {
   QMIDEV_BEARER_CDMA2000 = 1,
@@ -524,258 +517,17 @@ typedef enum {
 
 /* METHODS */
 
-/* Performs automatic service activation. */
-int qmidev_activate_automatic(
-  qmidev *dev,
-  const char *activation_code,
-  qmidev_response_fn callback,
-  void *context);
-
-/**
- * Performs manual service activation and then resets the device.
- * @spc: Service Programming Code (six digit string)
- * @sid: System identification number
- * @mdn: Mobile Directory Number (string or NULL)
- * @min: Mobile Identification Number (string or NULL)
- * @prl: PRL file (byte array or NULL),
- * @prl_len: length of PRL file, if provided
- * @mnha: MN-HA (string or NULL)
- * @mnaaa: MN-AAA (string or NULL)
- */
-int qmidev_activate_manual(
-  qmidev *dev,
-  const char *spc,
-  int sid,
-  const char *mdn,
-  const char *min,
-  const char *prl,
-  size_t prl_len,
-  const char *mnha,
-  const char *mnaaa,
-  qmidev_response_fn callback,
-  void *context);
-
-/*
- * Deletes one or more SMS messages from the device.
- * storage_type is the storage type of the messages to delete.
- *
- * If idx and tag are both NULL, all the messages in the given storage
- * location are deleted.
- *
- * If idx is NULL but tag is not, all the messages in the given storage
- * location with the given tag are deleted.
- *
- * If idx is not NULL buttag is, the message with the given index in
- * the given storage location is deleted.
- *
- * If idx and tag are both non-NULL, an error is returned.
- */
-int qmidev_sms_delete(
-  qmidev *dev,
-  qmidev_sms_storage storage_type,
-  uint8_t *idx,
-  qmidev_sms_tag *tag,
-  qmidev_response_fn callback,
-  void *context);
-
-/*
- * Callback type for qmidev_get_activation_state.  state is the activation
- * state of the device.
- */
-typedef void (*qmidev_activation_state_response_fn)(
-  qmidev *dev,
-  void *context,
-  int status,
-  qmidev_activation_state state);
-
-/* Gets the activation state of the device. */
-int qmidev_get_activation_state(
-  qmidev *dev,
-  qmidev_activation_state_response_fn callback,
-  void *context);
-
-/* Gets the active mobile IP profile of the device. */
-int qmidev_get_active_mobile_ip_profile(
-  qmidev *dev,
-  qmidev_int_response_fn callback,
-  void *context);
-
-/*
- * Callback type for qmidev_get_data_bearer_technology.  tech is the data
- * bearer technology.
- */
-typedef void (*qmidev_data_bearer_response_fn)(
-  qmidev *dev,
-  void *context,
-  int status,
-  qmidev_data_bearer tech);
-
-/*
- * Gets the current data bearer technology of the device.  Only valid when
- * connected to a network.
- */
-int qmidev_get_data_bearer_technology(
-  qmidev *dev,
-  qmidev_data_bearer_response_fn callback,
-  void *context);
-
-/* Callback type for qmidev_get_device_capabilities.  */
-typedef void (*qmidev_device_capabilities_response_fn)(
-  qmidev *dev,
-  void *context,
-  int status,
-  const qmidev_device_caps *caps);
-
-/* Gets the device capabilities.  TODO. */
-int qmidev_get_device_capabilities(
-  qmidev *dev,
-  qmidev_device_capabilities_response_fn callback,
-  void *context);
-
-/* TODO: enums */
-
-/* Callback type for qmidev_get_firmware_info. */
-typedef void (*qmidev_firmware_info_response_fn)(
-  qmidev *dev,
-  void *context,
-  int status,
-  int firmware_id,
-  int technology,
-  int carrier,
-  int region,
-  int gps_capability);
-
-/* Gets information about the current device firmware. */
-int qmidev_get_firmware_info(
-  qmidev *dev,
-  qmidev_firmware_info_response_fn callback,
-  void *context);
-
-/* Gets the device firmware revision. */
-int qmidev_get_firmware_revision(
-  qmidev *dev,
-  qmidev_string_response_fn callback,
-  void *context);
-
-/* Callback type for qmidev_get_firmware_revisions. */
-typedef void (*qmidev_firmware_revisions_response_fn)(
-  qmidev *dev,
-  void *context,
-  int status,
-  const char *amss_version,
-  const char *boot_version,
-  const char *pri_version);
-
-/* Gets the revisions of the current device AMSS, boot, and PRI firmware. */
-int qmidev_get_firmware_revisions(
-  qmidev *dev,
-  qmidev_firmware_revisions_response_fn callback,
-  void *context);
-
-/* Gets the hardware revision of the device. */
-int qmidev_get_hardware_revision(
-  qmidev *dev,
-  qmidev_string_response_fn callback,
-  void *context);
-
-/**
- * Callback type for qmidev_get_home_network.
- * @mcc: Mobile Country Code
- * @mnc: Mobile Network Code
- * @name: network name
- * @sid: System ID (of home network)
- * @nid: Network ID (of home network)
- */
-typedef void (*qmidev_home_network_response_fn)(
-  qmidev *dev,
-  void *context,
-  int status,
-  int mcc,
-  int mnc,
-  const char *name,
-  int sid,
-  int nid);
-
-/* Gets information about the home network of the device. */
-int qmidev_get_home_network(
-  qmidev *dev,
-  qmidev_home_network_response_fn callback,
-  void *context);
-
-/* Gets the IMSI of the device. */
-int qmidev_get_imsi(
-  qmidev *dev,
-  qmidev_string_response_fn callback,
-  void *context);
-
-/* Gets the manufacturer of the device. */
-int qmidev_get_manufacturer(
-  qmidev *dev,
-  qmidev_string_response_fn callback,
-  void *context);
-
-/* Gets the model ID of the device. */
-int qmidev_get_model_id(
-  qmidev *dev,
-  qmidev_string_response_fn callback,
-  void *context);
-
-/**
- * Callback type for qmidev_get_plmn_name.
- * @name_is_ucs2: 1 if the name is in UCS-2, 0 if TODO
- * @name_len: the length of name in bytes.
- * @name: the name itself
- */
-typedef void (*qmidev_plmn_name_response_fn)(
-  qmidev *dev,
-  void *context,
-  int status,
-  char name_is_ucs2,
-  size_t name_len,
-  const char *name);
-
-/**
- * Gets PLMN information for a given network.
- * @mcc: Mobile Country Code
- * @mnc: Mobile Network Code
- */
-int qmidev_get_plmn_name(
-  qmidev *dev,
-  int mcc,
-  int mnc,
-  qmidev_plmn_name_response_fn callback,
-  void *context);
-
 /* Callback type for qmidev_get_power.  state is the power state. */
 typedef void (*qmidev_power_state_response_fn)(
-  qmidev *dev,
+  struct qmidev *qmidev,
   void *context,
   int status,
   qmidev_power_state state);
 
 /* Gets the power state of the device. */
 int qmidev_get_power(
-  qmidev *dev,
+  struct qmidev *qmidev,
   qmidev_power_state_response_fn callback,
-  void *context);
-
-/* Gets the PRL version on the device. */
-int qmidev_get_prl_version(
-  qmidev *dev,
-  qmidev_int_response_fn callback,
-  void *context);
-
-/* Callback type for qmidev_get_rf_info.  info is the info structure. */
-typedef void (*qmidev_rf_info_response_fn)(
-  qmidev *dev,
-  void *context,
-  int status,
-  const qmidev_rf_info info);
-
-/* Gets the current RF information from the device. */
-int qmidev_get_rf_info(
-  qmidev *dev,
-  qmidev_rf_info_response_fn callback,
   void *context);
 
 /**
@@ -785,7 +537,7 @@ int qmidev_get_rf_info(
  * @meid: Mobile Equipment Identifier
  */
 typedef void (*qmidev_get_ids_response_fn)(
-  qmidev *dev,
+  struct qmidev *qmidev,
   void *context,
   int status,
   const char *esn,
@@ -794,401 +546,56 @@ typedef void (*qmidev_get_ids_response_fn)(
 
 /* Gets the serial numbers of the device. */
 int qmidev_get_ids(
-  qmidev *dev,
+  struct qmidev *qmidev,
   qmidev_get_ids_response_fn callback,
-  void *context);
-
-/* TODO: enums */
-
-/* Callback type for qmidev_get_serving_network. */
-typedef void (*qmidev_serving_network_response_fn)(
-  qmidev *dev,
-  void *context,
-  int status,
-  int reg_state,
-  int cs_status,
-  int ps_status,
-  int radio_access_network,
-  size_t num_interfaces,
-  const qmidev_radio_interface *interfaces,
-  int roaming,
-  int mcc,
-  int mnc,
-  size_t name_len,
-  const char *name);
-
-/* Gets information about the serving network. */
-int qmidev_get_serving_network(
-  qmidev *dev,
-  qmidev_serving_network_response_fn callback,
-  void *context);
-
-/* Callback type for qmidev_get_serving_network_caps. */
-typedef void (*qmidev_serving_network_caps_response_fn)(
-  qmidev *dev,
-  void *context,
-  int status,
-  size_t caps_len,
-  const qmidev_data_cap *caps);
-
-/* Gets the capabilities of the serving network. */
-int qmidev_get_serving_network_caps(
-  qmidev *dev,
-  qmidev_serving_network_caps_response_fn callback,
-  void *context);
-
-/*
- * Callback type for qmidev_get_signal_strengths.  num_strengths is the number
- * of signal strengths; strengths is an array of num_strengths items, each
- * containing the strength for one radio interface.
- */
-typedef void (*qmidev_signal_strengths_response_fn)(
-  qmidev *dev,
-  void *context,
-  int status,
-  int num_strengths,
-  qmidev_signal_strength strengths[]);
-
-/* Gets the signal strength(s) of the device. */
-int qmidev_get_signal_strengths(
-  qmidev *dev,
-  qmidev_signal_strengths_response_fn callback,
-  void *context);
-
-/* Callback type for qmidev_get_sms. */
-typedef void (*qmidev_sms_response_fn)(
-  qmidev *dev,
-  void *context,
-  int status,
-  qmidev_sms_tag tag,
-  qmidev_sms_format format,
-  size_t message_len,
-  const byte *message);
-
-/* Gets an SMS from the device, given the storage location and idx. */
-int qmidev_get_sms(
-  qmidev *dev,
-  qmidev_sms_storage storage,
-  uint8_t idx,
-  qmidev_sms_response_fn callback,
-  void *context);
-
-/* Callback type for qmidev_get_smsc_address. */
-typedef void (*qmidev_smsc_response_fn)(
-  qmidev *dev,
-  void *context,
-  int status,
-  const char *smsc_address,
-  const char *smsc_type);
-
-/* Gets the SMSC address (and type). */
-int qmidev_get_smsc_address(
-  qmidev *dev,
-  qmidev_smsc_response_fn callback,
-  void *context);
-
-/*
- * Callback type for qmidev_get_sms_list.  num_entries is the number of entries
- * in the SMS list, and entries is an array of num_entries entries.
- */
-typedef void (*qmidev_sms_list_response_fn)(
-  qmidev *dev,
-  void *context,
-  int status,
-  size_t num_entries,
-  const qmidev_sms_list_entry *entries);
-
-/* Gets a list of SMS messages, given a storage location and (optional) tag. */
-int qmidev_get_sms_list(
-  qmidev *dev,
-  qmidev_sms_storage storage,
-  qmidev_sms_tag *tag,
-  qmidev_sms_list_response_fn callback,
-  void *context);
-
-/**
- * Callback type for qmidev_get_voice_number.
- *
- * @voice_number: the device's voice number,
- * @min: the device's Mobile Identification Number
- */
-typedef void (*qmidev_voice_number_response_fn)(
-  qmidev *dev,
-  void *context,
-  int status,
-  const char *voice_number,
-  const char *min);
-
-/* Gets the voice number (and MIN) of the device. */
-int qmidev_get_voice_number(
-  qmidev *dev,
-  qmidev_voice_number_response_fn callback,
-  void *context);
-
-/* Initiates network registration. */
-int qmidev_initiate_network_registration(
-  qmidev *dev,
-  qmidev_reg_type registration_type,
-  int mcc,
-  int mnc,
-  qmidev_radio_access_tech radio_access_type,
-  qmidev_response_fn callback,
-  void *context);
-
-/* Callback type for qmidev_omadm_get_session_info.  TODO. */
-typedef void (*qmidev_omadm_session_info_response_fn)(
-  qmidev *dev,
-  void *context,
-  int status,
-  /* TODO: enums */
-  int state,
-  int type,
-  int failure_reason,
-  int retry_count,
-  int session_pause,
-  int time_remaining);
-
-/*
- * Gets information related to the current (or previous, if no session is
- * active) OMA-DM session.
- */
-int qmidev_omadm_get_session_info(
-  qmidev *dev,
-  qmidev_omadm_session_info_response_fn callback,
-  void *context);
-
-/* Starts an OMA-DM session.  type is the type of session to initiate. */
-int qmidev_omadm_start_session(
-  qmidev *dev,
-  /* TODO: enum */
-  int type,
-  qmidev_response_fn callback,
-  void *context);
-
-typedef struct qmidev_network_info qmidev_network_info;
-
-struct qmidev_network_info {
-  int mcc;
-  int mnc;
-  /* flags */
-  char in_use;
-  char roaming;
-  char forbidden;
-  char preferred;
-};
-
-/*
- * Callback type for qmidev_perform_network_scan.  num_networks is the number
- * of networks found; networks is an array of num_networks network info
- * structures.
- */
-typedef void (*qmidev_network_scan_response_fn)(
-  qmidev *dev,
-  void *context,
-  int status,
-  size_t num_networks;
-  qmidev_network_info *networks;
-);
-
-/* Performs a scan for available networks. */
-int qmidev_perform_network_scan(
-  qmidev *dev,
-  qmidev_network_scan_response_fn *callback,
-  void *context);
-
-/**
- * Resets the device's configuration to factory defaults and then resets the
- * device.
- * @spc: Service Programming Code.
- */
-int qmidev_reset_to_factory_defaults(
-  qmidev *dev,
-  const char *spc,
-  qmidev_response_fn callback,
-  void *context);
-
-/* Enables or disables port automatic tracking for the NMEA port. */
-int qmidev_set_port_automatic_tracking(
-  qmidev *dev,
-  int enabled,
-  qmidev_response_fn callback,
   void *context);
 
 /* Sets the operating mode of the device. */
 int qmidev_set_power(
-  qmidev *dev,
+  struct qmidev *qmidev,
   qmidev_power_state state,
   qmidev_response_fn callback,
   void *context);
 
-/* Enables or disables service automatic tracking. */
-int qmidev_set_service_automatic_tracking(
-  qmidev *dev,
-  int enabled,
-  qmidev_response_fn callback,
-  void *context);
+typedef uint32_t qmidev_session_id;
 
-/* Sets the SMSC address (and type). */
-int qmidev_set_smsc_address(
-  qmidev *dev,
-  const char *smsc_address,
-  const char *smsc_type,
-  qmidev_response_fn callback,
+typedef void (*qmidev_packet_status_response_fn)(
+  struct qmidev *qmidev,
+  void *context,
+  int status,
+  qmidev_packet_status packet_status);
+
+int qmidev_get_packet_status(
+  struct qmidev *qmidev,
+  qmidev_packet_status_response_fn callback,
   void *context);
 
 /*
- * Callback type for qmidev_start_data_session.  If successful, session_id
+ * Callback type for qmidev_start_network.  If successful, session_id
  * is the id of the newly-started session.  If unsuccessful, failure_reason
  * is the reason the session did not start.
  */
-typedef void (*qmidev_start_data_session_response_fn)(
-  qmidev *dev,
+typedef void (*qmidev_start_network_response_fn)(
+  struct qmidev *qmidev,
   void *context,
   int status,
-  int session_id, /* TODO: Really int? */
-  qmidev_oma_failure_reason failure_reason);
+  qmidev_session_id session_id, /* TODO: Really int? */
+  uint16_t call_end_reason);
 
 /* Starts a packet data session.  TODO: Document absurd arguments. */
-int qmidev_start_data_session(
-  qmidev *dev,
-  qmidev_session_tech *tech,
-  uint32_t *pri_dns,
-  uint32_t *sec_dns,
-  uint32_t *pri_nbns,
-  uint32_t *sec_nbns,
-  const char *apn_name,
-  uint32_t *ip_addr,
-  qmidev_session_auth *auth,
-  const char *username,
-  const char *password,
-  qmidev_start_data_session_response_fn callback,
+int qmidev_start_network(
+  struct qmidev *qmidev,
+  qmidev_start_network_response_fn callback,
   void *context);
 
 /*
  * Stops a packet data session.  session_id is the session id, as passed to
  * the callback for qmidev_start_data_session when the session started.
  */
-int qmidev_stop_data_session(
-  qmidev *dev,
-  int session_id,
+int qmidev_stop_network(
+  struct qmidev *qmidev,
+  qmidev_session_id session_id,
   qmidev_response_fn callback,
-  void *context);
-
-/*
- * Callback type for qmidev_uim_change_pin.  If unsuccessful,
- * verify_retries_left and unblock_retries_left will contain the number of
- * retries available to verify the PIN and unblock the PIN, respectively.
- */
-typedef void (*qmidev_uim_change_pin_response_fn)(
-  qmidev *dev,
-  void *context,
-  int status,
-  int verify_retries_left,
-  int unblock_retries_left);
-
-/*
- * Changes a PIN on the UIM.  pin_id is which pin (1 for PIN, 2 for PIN2);
- * old_value and new_value are the old and new values for the PIN.
- */
-int qmidev_uim_change_pin(
-  qmidev *dev,
-  qmidev_pin_id pin_id,
-  const char *old_value,
-  const char *new_value,
-  qmidev_uim_change_pin_response_fn callback,
-  void *context);
-
-/*
- * Callback type for qmidev_uim_get_pin_status.  pin_status is the PIN status;
- * verify_retries_left and unblock_retries_left are the number of retries
- * available to verify the PIN and unblock the PIN, respectively.
- */
-typedef void (*qmidev_uim_get_pin_status_response_fn)(
-  qmidev *dev,
-  void *context,
-  int status,
-  qmidev_pin_status pin_status,
-  int verify_retries_left,
-  int unblock_retries_left);
-
-/*
- * Gets the status of one of the PINs on the UIM.  pin_id is which pin (1 for
- * PIN, 2 for PIN2).
- */
-int qmidev_uim_get_pin_status(
-  qmidev *dev,
-  qmidev_pin_id pin_id,
-  qmidev_uim_get_pin_status_response_fn callback,
-  void *context);
-
-/*
- * Callback type for qmidev_uim_set_pin_protection.  If unsuccessful,
- * verify_retries_left is the number of retries available to verify the PIN.
- */
-typedef void (*qmidev_uim_set_pin_protection_response_fn)(
-  qmidev *dev,
-  void *context,
-  int status,
-  int verify_retries_left);
-
-/**
- * Enables or disables PIN protection for one of the PINs on the UIM.
- * @pin_id: which pin (1 for PIN, 2 for PIN2)
- * @enabled: whether to enable (1) or disable (0) the PIN protection
- * @value: the value of the PIN.
- */
-int qmidev_uim_set_pin_protection(
-  qmidev *dev,
-  qmidev_pin_id pin_id,
-  int enabled,
-  const char *value,
-  qmidev_uim_set_pin_protection_response_fn callback,
-  void *context);
-
-/*
- * Callback type for qmidev_uim_unblock_pin.  If unsuccessful,
- * verify_retries_left and unblock_retries_left are the number of retries
- * available to verify the PIN and unblock the PIN, respectively.
- */
-typedef void (*qmidev_uim_unblock_pin_response_fn)(
-  qmidev *dev,
-  void *context,
-  int status,
-  int verify_retries_left,
-  int unblock_retries_left);
-
-/*
- * Unblocks one of the PINs on the UIM.  pin_id is which pin (1 = PIN, 2 =
- * PIN2), puk_value is the value of the corresponding PUK (PUK or PUK2), and
- * new_value is the value to which to reset the PIN to.
- */
-int qmidev_uim_unblock_pin(
-  qmidev *dev,
-  qmidev_pin_id pin_id,
-  const char *puk_value,
-  const char *new_value,
-  qmidev_uim_unblock_pin_response_fn callback,
-  void *context);
-
-/*
- * Callback type for qmidev_uim_verify_pin.  If unsuccessful,
- * verify_retries_left is the number of retries available to verify the PIN.
- */
-typedef void (*qmidev_uim_verify_pin_response_fn)(
-  qmidev *dev,
-  void *context,
-  int status,
-  int verify_retries_left);
-
-/*
- * Verifies one of the PINs on the UIM.  pin_id is which pin (1 = PIN, 2 =
- * PIN2).  value is the value of that PIN.
- */
-int qmidev_uim_verify_pin(
-  qmidev *dev,
-  qmidev_pin_id pin_id,
-  const char *value,
-  qmidev_uim_verify_pin_response_fn callback,
   void *context);
 
 /* CALLBACKS */
@@ -1221,14 +628,14 @@ int qmidev_uim_verify_pin(
 
 /* Activation status callback type.  state is the activation state. */
 typedef void (*qmidev_activation_status_callback_fn)(
-  qmidev *dev,
+  struct qmidev *qmidev,
   void *context,
   int status,
   qmidev_activation_state state);
 
 /* Sets the activation status callback. */
 int qmidev_set_activation_status_changed_callback(
-  qmidev *dev,
+  struct qmidev *qmidev,
   qmidev_activation_status_callback_fn callback,
   void *context,
   qmidev_response_fn set_callback,
@@ -1236,7 +643,7 @@ int qmidev_set_activation_status_changed_callback(
 
 /* Byte totals callback type. */
 typedef void (*qmidev_byte_totals_callback_fn)(
-  qmidev *dev,
+  struct qmidev *qmidev,
   void *context,
   int status,
   uint64_t tx_bytes,
@@ -1244,7 +651,7 @@ typedef void (*qmidev_byte_totals_callback_fn)(
 
 /* Sets the byte totals callback. */
 int qmidev_set_byte_totals_callback(
-  qmidev *dev,
+  struct qmidev *qmidev,
   qmidev_byte_totals_callback_fn callback,
   void *context,
   qmidev_response_fn set_callback,
@@ -1252,14 +659,14 @@ int qmidev_set_byte_totals_callback(
 
 /* Data bearer callback type.  tech is the new data bearer technology. */
 typedef void (*qmidev_data_bearer_callback_fn)(
-  qmidev *dev,
+  struct qmidev *qmidev,
   void *context,
   int status,
   qmidev_data_bearer tech);
 
 /* Sets the data bearer callback. */
 int qmidev_set_data_bearer_callback(
-  qmidev *dev,
+  struct qmidev *qmidev,
   qmidev_data_bearer_callback_fn callback,
   void *context,
   qmidev_response_fn set_callback,
@@ -1267,7 +674,7 @@ int qmidev_set_data_bearer_callback(
 
 /* Data capabilities callback type.  TODO. */
 typedef void (*qmidev_data_capabilities_callback_fn)(
-  qmidev *dev,
+  struct qmidev *qmidev,
   void *context,
   int status,
   size_t num_caps,
@@ -1275,7 +682,7 @@ typedef void (*qmidev_data_capabilities_callback_fn)(
 
 /* Sets the data capabilities callback. */
 int qmidev_set_data_capabilities_callback(
-  qmidev *dev,
+  struct qmidev *qmidev,
   qmidev_data_capabilities_callback_fn callback,
   void *context,
   qmidev_response_fn set_callback,
@@ -1283,14 +690,14 @@ int qmidev_set_data_capabilities_callback(
 
 /* Dormancy status callback type.  dormancy is the dormancy status. */
 typedef void (*qmidev_dormancy_status_callback_fn)(
-  qmidev *dev,
+  struct qmidev *qmidev,
   void *context,
   int status,
   qmidev_dormancy_status dormancy);
 
 /* Sets the dormancy status callback. */
 int qmidev_set_dormancy_status_callback(
-  qmidev *dev,
+  struct qmidev *qmidev,
   qmidev_dormancy_status_callback_fn callback,
   void *context,
   qmidev_response_fn set_callback,
@@ -1301,7 +708,7 @@ int qmidev_set_dormancy_status_callback(
  * for rejection.
  */
 typedef void (*qmidev_lu_reject_callback_fn)(
-  qmidev *dev,
+  struct qmidev *qmidev,
   void *context,
   int status,
   qmidev_lu_domain domain,
@@ -1309,7 +716,7 @@ typedef void (*qmidev_lu_reject_callback_fn)(
 
 /* Sets the LU reject callback. */
 int qmidev_set_lu_reject_callback(
-  qmidev *dev,
+  struct qmidev *qmidev,
   qmidev_lu_reject_callback_fn callback,
   void *context,
   qmidev_response_fn set_callback,
@@ -1317,14 +724,14 @@ int qmidev_set_lu_reject_callback(
 
 /* Mobile IP status callback type.  ip_status is the new status. */
 typedef void (*qmidev_mobile_ip_status_callback_fn)(
-  qmidev *dev,
+  struct qmidev *qmidev,
   void *context,
   int status,
   qmidev_mobile_ip_status ip_status);
 
 /* Sets the mobile IP status callback. */
 int qmidev_set_mobile_ip_status_callback(
-  qmidev *dev,
+  struct qmidev *qmidev,
   qmidev_mobile_ip_status_callback_fn callback,
   void *context,
   qmidev_response_fn set_callback,
@@ -1335,7 +742,7 @@ int qmidev_set_mobile_ip_status_callback(
  * idx is the message index within that storage location.
  */
 typedef void (*qmidev_new_sms_callback_fn)(
-  qmidev *dev,
+  struct qmidev *qmidev,
   void *context,
   int status,
   qmidev_sms_storage storage,
@@ -1343,7 +750,7 @@ typedef void (*qmidev_new_sms_callback_fn)(
 
 /* Sets the new SMS callback. */
 int qmidev_set_new_sms_callback(
-  qmidev *dev,
+  struct qmidev *qmidev,
   qmidev_new_sms_callback_fn callback,
   void *context,
   qmidev_response_fn set_callback,
@@ -1358,7 +765,7 @@ int qmidev_set_new_sms_callback(
  * alert.
  */
 typedef void (*qmidev_omadm_alert_callback_fn)(
-  qmidev *dev,
+  struct qmidev *qmidev,
   void *context,
   int status,
   int type,
@@ -1366,7 +773,7 @@ typedef void (*qmidev_omadm_alert_callback_fn)(
 
 /* Sets the OMA-DM alert callback. */
 int qmidev_set_omadm_alert_callback(
-  qmidev *dev,
+  struct qmidev *qmidev,
   qmidev_omadm_alert_callback_fn callback,
   void *context,
   qmidev_response_fn set_callback,
@@ -1374,14 +781,14 @@ int qmidev_set_omadm_alert_callback(
 
 /* OMA-DM state callback type.  state is the new OMA-DM state. */
 typedef void (*qmidev_omadm_state_callback_fn)(
-  qmidev *dev,
+  struct qmidev *qmidev,
   void *context,
   int status,
   qmidev_omadm_state state);
 
 /* Sets the OMA-DM state callback. */
 int qmidev_set_omadm_state_callback(
-  qmidev *dev,
+  struct qmidev *qmidev,
   qmidev_omadm_state_callback_fn callback,
   void *context,
   qmidev_response_fn set_callback,
@@ -1394,7 +801,7 @@ int qmidev_set_omadm_state_callback(
  * state.
  */
 typedef void (*qmidev_pds_state_callback_fn)(
-  qmidev *dev,
+  struct qmidev *qmidev,
   void *context,
   int status,
   int enabled,
@@ -1402,7 +809,7 @@ typedef void (*qmidev_pds_state_callback_fn)(
 
 /* Sets the PDS state callback. */
 int qmidev_set_pds_state_callback(
-  qmidev *dev,
+  struct qmidev *qmidev,
   qmidev_pds_state_callback_fn callback,
   void *context,
   qmidev_response_fn set_callback,
@@ -1410,14 +817,14 @@ int qmidev_set_pds_state_callback(
 
 /* Power state callback type.  state is the new power state of the device. */
 typedef void (*qmidev_power_callback_fn)(
-  qmidev *dev,
+  struct qmidev *qmidev,
   void *context,
   int status,
   qmidev_power_state state);
 
 /* Sets the power state callback. */
 int qmidev_set_power_callback(
-  qmidev *dev,
+  struct qmidev *qmidev,
   qmidev_power_callback_fn callback,
   void *context,
   qmidev_response_fn set_callback,
@@ -1425,14 +832,14 @@ int qmidev_set_power_callback(
 
 /* RF info callback type.  info is the RF info. */
 typedef void (*qmidev_rf_info_callback_fn)(
-  qmidev *dev,
+  struct qmidev *qmidev,
   void *context,
   int status,
   const qmidev_rf_info info);
 
 /* Sets the RF info callback. */
 int qmidev_set_rf_info_callback(
-  qmidev *dev,
+  struct qmidev *qmidev,
   qmidev_rf_info_callback_fn callback,
   void *context,
   qmidev_response_fn set_callback,
@@ -1443,30 +850,30 @@ int qmidev_set_rf_info_callback(
  * indicator.
  */
 typedef void (*qmidev_roaming_indicator_callback_fn)(
-  qmidev *dev,
+  struct qmidev *qmidev,
   void *context,
   int status,
   qmidev_roaming_indicator indicator);
 
 /* Sets the roaming indicator callback. */
 int qmidev_set_roaming_indicator_callback(
-  qmidev *dev,
+  struct qmidev *qmidev,
   qmidev_roaming_indicator_callback_fn callback,
   void *context,
   qmidev_response_fn set_callback,
   void *set_context);
 
-/* (Packet data) session state callback type.  state is the new state. */
-typedef void (*qmidev_session_state_callback_fn)(
-  qmidev *dev,
+/* packet_status callback type.  state is the new state. */
+typedef void (*qmidev_packet_status_callback_fn)(
+  struct qmidev *qmidev,
   void *context,
   int status,
-  qmidev_session_state state);
+  qmidev_packet_status packet_status);
 
-/* Sets the session state callback. */
-int qmidev_set_session_state_callback(
-  qmidev *dev,
-  qmidev_session_state_callback_fn callback,
+/* Sets the packet status callback. */
+int qmidev_set_packet_status_callback(
+  struct qmidev *qmidev,
+  qmidev_packet_status_callback_fn callback,
   void *context,
   qmidev_response_fn set_callback,
   void *set_context);
@@ -1476,7 +883,7 @@ int qmidev_set_session_state_callback(
  * strength has changed, and strength is the new strength.
  */
 typedef void (*qmidev_signal_strength_callback_fn)(
-  qmidev *dev,
+  struct qmidev *qmidev,
   void *context,
   int status,
   qmidev_radio_interface interface,
@@ -1488,7 +895,7 @@ typedef void (*qmidev_signal_strength_callback_fn)(
  * num_thresholds signal strength thresholds.
  */
 int qmidev_set_signal_strength_callback(
-  qmidev *dev,
+  struct qmidev *qmidev,
   qmidev_signal_strength_callback_fn callback,
   void *context,
   size_t num_thresholds,

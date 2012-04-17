@@ -16,6 +16,7 @@ LIBQMI_SRCS = \
 	qmidev.c \
 	qmidms.c \
 	qmimsg.c \
+	qmiwds.c \
 	util.c
 
 UNITTESTS = \
@@ -23,8 +24,9 @@ UNITTESTS = \
 TESTS = \
 	connect_disconnect_test \
 	get_cid_stress_test \
-	power_test \
-	qmiinfo
+	power_stress_test \
+	qmiinfo \
+	start_network_stress_test
 
 PC_CFLAGS := $(shell pkg-config --cflags glib-2.0)
 CFLAGS += -fpic -I ../include $(PC_CFLAGS)
@@ -54,10 +56,13 @@ connect_disconnect_test: connect_disconnect_test.o | libqmi.so
 get_cid_stress_test: get_cid_stress_test.o | libqmi.so
 	$(LINK.c)
 
-power_test: power_test.o | libqmi.so
+power_stress_test: power_stress_test.o | libqmi.so
 	$(LINK.c)
 
 qmiinfo: qmiinfo.o | libqmi.so
+	$(LINK.c)
+
+start_network_stress_test: start_network_stress_test.o | libqmi.so
 	$(LINK.c)
 
 install:
@@ -66,8 +71,9 @@ install:
 	install -d $(DESTDIR)$(SBINDIR)
 	install -m755 connect_disconnect_test $(DESTDIR)$(SBINDIR)
 	install -m755 get_cid_stress_test $(DESTDIR)$(SBINDIR)
-	install -m755 power_test $(DESTDIR)$(SBINDIR)
+	install -m755 power_stress_test $(DESTDIR)$(SBINDIR)
 	install -m755 qmiinfo $(DESTDIR)$(SBINDIR)
+	install -m755 start_network_stress_test $(DESTDIR)$(SBINDIR)
 
 clean:
 	rm -f *.o libqmi.so $(UNITTESTS) $(TESTS)
