@@ -100,11 +100,13 @@ static struct qmidev *qmidev_new(void)
 
 struct qmidev *qmidev_new_file(const char *path)
 {
+  struct qmidev *qmidev;
+  struct dev *dev;
+
   assert(path);
 
-  struct qmidev *qmidev = qmidev_new();
-
-  struct dev *dev = file_new(qmidev, path);
+  qmidev = qmidev_new();
+  dev = file_new(qmidev, path);
   if (!dev) {
     free(qmidev);
     return NULL;
@@ -116,9 +118,11 @@ struct qmidev *qmidev_new_file(const char *path)
 
 struct qmidev *qmidev_new_mock(void)
 {
-  struct qmidev *qmidev = qmidev_new();
+  struct qmidev *qmidev;
+  struct dev *dev;
 
-  struct dev *dev = mock_new();
+  qmidev = qmidev_new();
+  dev = mock_new();
   qmidev->dev = dev;
 
   return qmidev;
@@ -156,12 +160,13 @@ struct listener *qmidev_listen(struct qmidev *qmidev,
                                qmidev_listen_callback_fn callback,
                                void *context)
 {
+  struct listener *listener;
+
   assert(qmidev);
   assert(criteria);
   assert(callback);
 
-  struct listener *listener = g_slice_new(struct listener);
-
+  listener = g_slice_new(struct listener);
   listener->client = client;
   listener->criteria = *criteria;
   listener->callback = callback;
@@ -198,6 +203,7 @@ static void call_listener(void *data, void *user_data)
   struct listener *listener = data;
   struct listen_criteria *crit = &listener->criteria;
   int flags = crit->flags;
+  int result;
 
   if (listener->client->service->service_id != context->msg_service)
     return;
@@ -218,9 +224,9 @@ static void call_listener(void *data, void *user_data)
       (crit->message != context->msg_message))
     return;
 
-  int result = listener->callback(context->qmidev,
-                                  listener->context,
-                                  context->message);
+  result = listener->callback(context->qmidev,
+                              listener->context,
+                              context->message);
   if (result) {
     /* The glib documentation does not note this, but it is in fact safe to
        call g_list_remove while called back from g_list_foreach. */
@@ -798,13 +804,16 @@ int qmidev_connect(struct qmidev *qmidev,
                    qmidev_response_fn caller_callback,
                    void *caller_context)
 {
+  struct connect_context *context;
+  int result;
+
   assert(qmidev);
   assert(caller_callback);
 
   if (qmidev->connected)
     return QMI_ERR_ALREADY_CONNECTED;
 
-  int result = dev_open(qmidev->dev);
+  result = dev_open(qmidev->dev);
   /* TODO: Should this go through the callback instead? */
   if (result)
     return result;
@@ -813,7 +822,7 @@ int qmidev_connect(struct qmidev *qmidev,
 
   qmidev->clients = g_list_prepend(qmidev->clients, make_ctl_client(qmidev));
 
-  struct connect_context *context = g_slice_new(struct connect_context);
+  context = g_slice_new(struct connect_context);
   context->caller_callback = caller_callback;
   context->caller_context = caller_context;
   context->pending_services = g_queue_new();
@@ -884,13 +893,15 @@ int qmidev_disconnect(struct qmidev *qmidev,
                       qmidev_response_fn caller_callback,
                       void *caller_context)
 {
+  struct disconnect_context *context;
+
   assert(qmidev);
   assert(caller_callback);
 
   if (!qmidev->connected)
     return QMI_ERR_NOT_CONNECTED;
 
-  struct disconnect_context *context = g_slice_new(struct disconnect_context);
+  context = g_slice_new(struct disconnect_context);
   context->caller_callback = caller_callback;
   context->caller_context = caller_context;
 
@@ -901,8 +912,9 @@ int qmidev_disconnect(struct qmidev *qmidev,
 
 static int dev_read_fn(void *ctx, void *buf, size_t len)
 {
+  struct qmidev *qmidev;
   assert(ctx);
-  struct qmidev *qmidev = ctx;
+  qmidev = ctx;
   assert(qmidev->dev);
 
   return dev_read(qmidev->dev, buf, len);
@@ -910,12 +922,15 @@ static int dev_read_fn(void *ctx, void *buf, size_t len)
 
 static void dev_read_cb(struct polled *polled)
 {
+  struct qmidev *qmidev;
+  struct qmimsg *msg;
+  int result;
+
   assert(polled);
-  struct qmidev *qmidev = polled_priv(polled);
+  qmidev = polled_priv(polled);
   assert(qmidev);
 
-  struct qmimsg *msg;
-  int result = qmimsg_read(&dev_read_fn, qmidev, &msg);
+  result = qmimsg_read(&dev_read_fn, qmidev, &msg);
   if (result)
     return;
   if (call_listeners(qmidev, msg) && qmidev_log_unhandled_messages) {
@@ -927,8 +942,10 @@ static void dev_read_cb(struct polled *polled)
 
 static void dev_close_cb(struct polled *polled)
 {
+  struct qmidev *qmidev;
+
   assert(polled);
-  struct qmidev *qmidev = polled_priv(polled);
+  qmidev = polled_priv(polled);
   assert(qmidev);
 
   qmidev_clear_dev_fd(qmidev);
@@ -968,8 +985,10 @@ int qmidev_clear_dev_fd(struct qmidev *qmidev)
 
 static int dev_write_fn(void *ctx, const void *buf, size_t len)
 {
+  struct qmidev *qmidev;
+
   assert(ctx);
-  struct qmidev *qmidev = ctx;
+  qmidev = ctx;
   assert(qmidev->dev);
 
   return dev_write(qmidev->dev, buf, len);
@@ -994,10 +1013,12 @@ struct polled *qmidev_poll(struct qmidev *qmidev, int fd)
 
 void qmidev_call_later(struct qmidev *qmidev, callback_fn func, void *context)
 {
+  struct callback *callback;
+
   assert(qmidev);
   assert(func);
 
-  struct callback *callback = g_slice_new(struct callback);
+  callback = g_slice_new(struct callback);
   callback->func = func;
   callback->context = context;
   qmidev->callbacks = g_list_append(qmidev->callbacks, callback);

@@ -28,9 +28,11 @@ static int dev_is_open(struct dev *dev)
 
 struct dev *dev_new(struct dev_ops *ops, void *priv)
 {
+  struct dev *dev;
+
   assert(ops);
 
-  struct dev *dev = g_slice_new(struct dev);
+  dev = g_slice_new(struct dev);
   dev->ops = ops;
   dev->priv = priv;
   dev->flags = 0;
@@ -57,11 +59,13 @@ void *dev_priv(struct dev *dev)
 
 int dev_open(struct dev *dev)
 {
+  int result;
+
   assert(dev);
   assert(!dev_is_open(dev));
   assert(dev->ops->open);
 
-  int result = dev->ops->open(dev);
+  result = dev->ops->open(dev);
 
   if (result == 0)
     dev->flags |= FLAG_OPEN;
@@ -89,11 +93,13 @@ int dev_write(struct dev *dev, const void *buf, size_t len)
 
 int dev_close(struct dev *dev)
 {
+  int result;
+
   assert(dev);
   assert(dev_is_open(dev));
   assert(dev->ops->close);
 
-  int result = dev->ops->close(dev);
+  result = dev->ops->close(dev);
 
   if (result == 0)
     dev->flags &= ~FLAG_OPEN;

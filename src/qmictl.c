@@ -122,12 +122,14 @@ static void release_cid_response(struct qmidev *qmidev,
                                  int result,
                                  struct qmimsg *message)
 {
+  struct release_cid_context *context;
+  struct qmi_cid id;
+
   assert(qmidev);
   assert(data);
   assert(message);
 
-  struct release_cid_context *context = data;
-  struct qmi_cid id;
+  context = data;
 
   if (result)
     goto out;

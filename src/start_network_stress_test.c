@@ -19,31 +19,35 @@ static void started(struct qmidev *qmidev, void *data, int status,
 
 static void start(struct qmidev *qmidev, struct context *context)
 {
+  int result;
+
   assert(!context->session_id);
-  int result = qmidev_start_network(qmidev, &started, context);
+  result = qmidev_start_network(qmidev, &started, context);
   assert(result == 0);
 }
 
 static void stop(struct qmidev *qmidev, struct context *context)
 {
+  int result;
+
   assert(context->session_id);
-  int result = qmidev_stop_network(qmidev, context->session_id,
-                                   &stopped, context);
+  result = qmidev_stop_network(qmidev, context->session_id,
+                               &stopped, context);
   assert(result == 0);
 }
 
 static void started(struct qmidev *qmidev, void *data, int status,
                     qmidev_session_id session_id, uint16_t end)
 {
-  /* unused */
-  qmidev = qmidev;
-
   struct context *context = data;
   printf("started: status = %d session_id = 0x%08x call_end_reason = %d\n",
          status, session_id, end);
   assert(status == 0);
   context->session_id = session_id;
   stop(qmidev, context);
+
+  /* unused */
+  qmidev = qmidev;
 }
 
 static void stopped(struct qmidev *qmidev, void *data, int status)
@@ -67,22 +71,25 @@ static void packet_status_changed(struct qmidev *qmidev,
 
 static void connected(struct qmidev *qmidev, void *data, int status)
 {
+  int result;
+
   assert(status == 0);
-  int result = qmidev_set_packet_status_callback(qmidev,
-                                                 &packet_status_changed, data,
-                                                 NULL, NULL);
+  result = qmidev_set_packet_status_callback(qmidev,
+                                             &packet_status_changed, data,
+                                             NULL, NULL);
   assert(result == 0);
   start(qmidev, data);
 }
 
 int main(void)
 {
+  struct qmidev *qmidev;
   struct context context;
   int result;
 
   context.session_id = 0;
 
-  struct qmidev *qmidev = qmidev_new_file("/dev/cdc-wdm0");
+  qmidev = qmidev_new_file("/dev/cdc-wdm0");
   assert(qmidev);
 
   result = qmidev_connect(qmidev, &connected, &context);

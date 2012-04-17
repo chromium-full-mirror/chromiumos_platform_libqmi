@@ -29,15 +29,18 @@ struct file_priv {
 
 static int file_open(struct dev *dev)
 {
+  struct file_priv *priv;
+  int fd, result;
+
   assert(dev);
-  struct file_priv *priv = dev_priv(dev);
+  priv = dev_priv(dev);
   assert(!FILE_OPEN(priv));
 
-  int fd = open(priv->path, O_RDWR);
+  fd = open(priv->path, O_RDWR);
   if (fd < 0)
     return errno;
 
-  int result = qmidev_set_dev_fd(priv->qmidev, fd);
+  result = qmidev_set_dev_fd(priv->qmidev, fd);
   if (result) {
     close(fd);
     return result;
@@ -50,12 +53,15 @@ static int file_open(struct dev *dev)
 
 static int file_read(struct dev *dev, void *buf, size_t len)
 {
+  struct file_priv *priv;
+  ssize_t result;
+
   assert(dev);
   assert(buf);
-  struct file_priv *priv = dev_priv(dev);
+  priv = dev_priv(dev);
   assert(FILE_OPEN(priv));
 
-  ssize_t result = read(priv->fd, buf, len);
+  result = read(priv->fd, buf, len);
   if (result < 0)
     return result;
 
@@ -66,12 +72,15 @@ static int file_read(struct dev *dev, void *buf, size_t len)
 
 static int file_write(struct dev *dev, const void *buf, size_t len)
 {
+  struct file_priv *priv;
+  ssize_t result;
+
   assert(dev);
   assert(buf);
-  struct file_priv *priv = dev_priv(dev);
+  priv = dev_priv(dev);
   assert(FILE_OPEN(priv));
 
-  ssize_t result = write(priv->fd, buf, len);
+  result = write(priv->fd, buf, len);
   if (result < 0)
     return result;
 
@@ -82,11 +91,14 @@ static int file_write(struct dev *dev, const void *buf, size_t len)
 
 static int file_close(struct dev *dev)
 {
+  struct file_priv *priv;
+  int result;
+
   assert(dev);
-  struct file_priv *priv = dev_priv(dev);
+  priv = dev_priv(dev);
   assert(FILE_OPEN(priv));
 
-  int result = close(priv->fd);
+  result = close(priv->fd);
   if (result < 0)
     return result;
 
@@ -99,8 +111,10 @@ static int file_close(struct dev *dev)
 
 static void file_destroy(struct dev *dev)
 {
+  struct file_priv *priv;
+
   assert(dev);
-  struct file_priv *priv = dev_priv(dev);
+  priv = dev_priv(dev);
   assert(!FILE_OPEN(priv));
   g_free(priv->path);
   g_slice_free(struct file_priv, priv);
